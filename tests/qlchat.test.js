@@ -133,7 +133,7 @@ test('already-cancelled request never starts a fetch', async () => {
   assert.equal(fetched, false);
 });
 
-test('desktop exit waits for batch cleanup before closing the main window', async () => {
+test('desktop blocks unlicensed downloads and waits for cleanup before closing', async () => {
   const vm = require('node:vm');
   const { readFileSync } = require('node:fs');
   const path = require('node:path');
@@ -141,7 +141,7 @@ test('desktop exit waits for batch cleanup before closing the main window', asyn
   const handles = new Map();
   const app = new EventEmitter();
   const outputDir = path.join(require('node:os').tmpdir(), 'qlchat-exit-check', '千聊课程');
-  let main, engine, finishCleanup, quitCount = 0;
+  let main, engine, license, finishCleanup, quitCount = 0;
   const preventable = () => ({ defaultPrevented: false, preventDefault() { this.defaultPrevented = true; } });
   Object.assign(app, { setName() {}, setPath() {}, getPath: () => path.dirname(outputDir), getVersion: () => 'test',
     commandLine: { appendSwitch() {} }, requestSingleInstanceLock: () => true, whenReady: () => Promise.resolve(),
@@ -162,7 +162,7 @@ test('desktop exit waits for batch cleanup before closing the main window', asyn
     async resolveMedia(task, options) { return { task, options }; }
   }
   class License {
-    constructor() { this.state = { authorized: true, detail: '授权有效' }; }
+    constructor() { license = this; this.state = { authorized: false, detail: '尚未激活' }; }
     async authorize() { return this.state; }
     async activate() { return this.state; }
     async clear() { return { authorized: false, detail: '尚未激活' }; }
@@ -182,6 +182,11 @@ test('desktop exit waits for batch cleanup before closing the main window', asyn
   vm.runInNewContext(readFileSync(path.resolve(__dirname, '../src/main.js'), 'utf8'), sandbox);
   await new Promise(resolve => setImmediate(resolve));
   const sender = { sender: main.webContents, senderFrame: { url: 'file:///app/index.html' } };
+  const denied = await handles.get('qlchat:start-download')(sender, { tasks: [{ id: '10000' }], outputDir });
+  assert.equal(denied.ok, false);
+  assert.match(denied.error, /激活/);
+  assert.equal(engine.busy, false);
+  license.state = { authorized: true, detail: '授权有效' };
   await handles.get('qlchat:parse-course')(sender, { url: 'https://h5.qlchat.com/?topicId=10000' });
   await handles.get('qlchat:start-download')(sender, { tasks: [{ id: '10000' }], outputDir });
   const forwarded = new AbortController();

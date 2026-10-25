@@ -20,8 +20,8 @@ foreach ($RequiredPath in @($ElectronDist, $BuilderCli, $FfmpegPath)) {
 }
 
 $Package = Get-Content -LiteralPath (Join-Path $ProjectRoot 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$ExpectedInstaller = Join-Path $ProjectRoot "dist/千聊下载器-$($Package.version)-x64-Setup.exe"
-$ExpectedPortable = Join-Path $ProjectRoot "dist/千聊下载器-$($Package.version)-x64-Portable.exe"
+$ExpectedInstaller = Join-Path $ProjectRoot "dist/QlchatDownloader-$($Package.version)-x64-Setup.exe"
+$ExpectedPortable = Join-Path $ProjectRoot "dist/QlchatDownloader-$($Package.version)-x64-Portable.exe"
 $BuilderCache = Join-Path $WorkspaceRoot '.electron-builder-cache'
 
 if ($CheckOnly) {

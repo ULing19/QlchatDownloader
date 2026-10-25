@@ -2,16 +2,16 @@
 
 独立 Windows 桌面程序，将账号可正常播放的千聊课程保存为本地 MP4。支持内置浏览器登录、订单授权、读取课程目录、保存本机课程库、按章节选择课程和批量下载。
 
-项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.2.0](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.2.0)。
+项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.2.1](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.2.1)。
 
-直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.0/QlchatDownloader-0.2.0-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.0/QlchatDownloader-0.2.0-x64-Portable.exe)
+直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.1/QlchatDownloader-0.2.1-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.1/QlchatDownloader-0.2.1-x64-Portable.exe)
 
 ## 安装使用
 
-1. 运行 `千聊下载器-0.2.0-x64-Setup.exe`，选择安装位置；也可直接运行 `千聊下载器-0.2.0-x64-Portable.exe`。
+1. 运行 `QlchatDownloader-0.2.1-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.2.1-x64-Portable.exe`。
 2. 粘贴千聊课程或单节链接，打开登录窗口，用购课账号完成登录。
 3. 读取课程目录，勾选要下载的章节或单节课程。
-4. 输入带 `QLCHAT-` 前缀的订单号完成本机授权，选择保存文件夹，开始下载。可查看进度、取消任务和打开保存位置。
+4. 输入闲鱼订单号完成本机授权（订单号本身就是兑换码，不需要另填兑换码），选择保存文件夹，开始下载。可查看进度、取消任务和打开保存位置。
 
 账号登录状态只保存在本机，此程序使用独立的应用数据目录，与钉钉及小鹅通下载器分开。已读取的课程会保存到本机课程库，重新打开程序即可查看并再次读取。当前课程库记录的是本机已读取过的课程，平台没有提供可稳定依赖的“自动列出全部购买课程”接口。无需将 Cookie、验证码或密码发送给其他人。
 
@@ -19,7 +19,9 @@
 
 ## 订单授权
 
-授权服务使用现有 HTTPS 订单授权接口，但千聊产品使用独立的 `QLCHAT-` 订单前缀。例如订单号 `123456789012` 在软件中输入 `QLCHAT-123456789012`。这使千聊订单与钉钉订单分开计数；每个订单最多绑定两台设备。订单授权缓存保存在本机，服务临时不可用时沿用短期离线租约。GitHub 发布包不包含订单号、兑换码或管理密钥。
+闲鱼商品：[千聊课程下载器](https://www.goofish.com/item?id=1093753190581)。订单号就是兑换码，只需填写一次；钉钉商品的订单不能激活千聊。
+
+授权服务使用现有 HTTPS 订单授权接口，千聊产品在服务端使用独立分区。用户只需输入原始闲鱼订单号，例如 `123456789012`，订单号本身就是兑换码。这使千聊订单与钉钉订单分开计数；每个订单最多绑定两台设备。订单授权缓存保存在本机，服务临时不可用时沿用短期离线租约。GitHub 发布包不包含订单号、兑换码或管理密钥。
 
 ## 支持范围
 

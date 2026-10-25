@@ -1,9 +1,10 @@
 {
   "name": "qlchat-desktop-downloader",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "千聊课程下载器：本机登录、课程目录和批量下载",
   "author": "ULing19",
+  "license": "MIT",
   "main": "src/main.js",
   "scripts": {
     "start": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/start.ps1",
@@ -30,6 +31,7 @@
       "assets/app.ico",
       "assets/app.png",
       "README.md",
+      "LICENSE",
       "package.json"
     ],
     "extraResources": [
@@ -59,7 +61,7 @@
       "signAndEditExecutable": false
     },
     "nsis": {
-      "artifactName": "千聊下载器-${version}-${arch}-Setup.${ext}",
+      "artifactName": "QlchatDownloader-${version}-${arch}-Setup.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowElevation": false,
@@ -74,7 +76,7 @@
       "language": "2052"
     },
     "portable": {
-      "artifactName": "千聊下载器-${version}-${arch}-Portable.${ext}"
+      "artifactName": "QlchatDownloader-${version}-${arch}-Portable.${ext}"
     }
   }
 }
