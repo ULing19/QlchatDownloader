@@ -6,6 +6,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { QlchatLicense, normalizeOrder, PRODUCT_ID } = require('../src/core/license');
+const { atomicWriteFile } = require('../src/core/storage');
 
 async function temp(t) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'qlchat-license-'));
@@ -118,6 +119,41 @@ test('refuses to cache an authorization if Windows safe storage is unavailable',
   const license = new QlchatLicense({ storageDir: dir, deviceId: 'install-no-encryption', safeStorage: { isEncryptionAvailable: () => false }, fetchImpl: async () => response({ authorized: true, expires_at: null }) });
   await assert.rejects(license.activate('123456789012'), /安全存储不可用/);
   await assert.rejects(fs.access(path.join(dir, 'license.dat')));
+});
+
+test('activation preserves an existing encrypted credential when a redirected rename fails with EXDEV', async t => {
+  const root = await temp(t);
+  const logicalDir = path.join(root, 'C-volume', 'Roaming', 'QlchatDownloader');
+  const physicalDir = path.join(root, 'E-volume', 'WpSystem', 'LocalCache', 'Roaming', 'QlchatDownloader');
+  await fs.mkdir(physicalDir, { recursive: true });
+  const resolve = value => {
+    const full = path.resolve(value);
+    if (full === path.resolve(logicalDir)) return physicalDir;
+    if (full.startsWith(path.resolve(logicalDir) + path.sep)) return path.join(physicalDir, path.relative(logicalDir, full));
+    return value;
+  };
+  const redirectedFs = {
+    mkdir: (value, options) => fs.mkdir(resolve(value), options),
+    open: (value, flags, mode) => fs.open(resolve(value), flags, mode),
+    readFile: (value, options) => fs.readFile(resolve(value), options),
+    unlink: value => fs.unlink(resolve(value)),
+    realpath: async value => path.resolve(value) === path.resolve(logicalDir) ? path.resolve(logicalDir) : fs.realpath(resolve(value)),
+    rename: async () => { throw Object.assign(new Error('EXDEV ' + root + ' order-secret'), { code: 'EXDEV' }); },
+  };
+  const atomic = (destination, data) => atomicWriteFile(destination, data, { fsImpl: redirectedFs });
+  const previous = { orderId: '123456789012', code: '123456789012', lastOnlineAt: 1, expiresAt: null };
+  const previousBytes = testSafeStorage.encryptString(JSON.stringify(previous)).toString('base64');
+  await fs.writeFile(path.join(physicalDir, 'license.dat'), previousBytes);
+  const license = new QlchatLicense({
+    storageDir: logicalDir, deviceId: 'install-exdev', safeStorage: testSafeStorage,
+    writeFileAtomic: atomic,
+    fetchImpl: async () => response({ authorized: true, expires_at: null }),
+  });
+
+  await assert.rejects(license.activate('123456789012'), error => error.kind === 'storage' && /EXDEV/.test(error.message) && !error.message.includes(root) && !error.message.includes('order-secret'));
+  assert.equal(license.state.authorized, false);
+  assert.equal(await fs.readFile(path.join(physicalDir, 'license.dat'), 'utf8'), previousBytes);
+  assert.deepEqual(await fs.readdir(physicalDir), ['license.dat']);
 });
 
 test('does not trust a future local timestamp after the system clock moves backwards', async t => {

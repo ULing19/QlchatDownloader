@@ -6,6 +6,7 @@ const fs = require('node:fs/promises');
 const { QlchatClient, courseUrl, ORIGIN, USER_AGENT } = require('./core/qlchat');
 const { DownloadManager } = require('./core/download');
 const { QlchatLicense } = require('./core/license');
+const { atomicWriteFile } = require('./core/storage');
 
 app.setName('千聊下载器');
 app.commandLine.appendSwitch('force-renderer-accessibility');
@@ -60,8 +61,7 @@ function openLogin(input) {
 
 async function savePreferences() {
   const file = path.join(app.getPath('userData'), 'preferences.json');
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, JSON.stringify({ outputDir }), 'utf8');
+  await atomicWriteFile(file, JSON.stringify({ outputDir }));
 }
 
 async function loadCourseLibrary() {
@@ -73,16 +73,13 @@ async function loadCourseLibrary() {
 
 async function saveCourseLibrary() {
   const file = path.join(app.getPath('userData'), 'course-library.json');
-  const temp = file + '.tmp';
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(temp, JSON.stringify(courseLibrary), 'utf8');
-  await fs.rename(temp, file);
+  await atomicWriteFile(file, JSON.stringify(courseLibrary));
 }
 
 async function rememberCourse(url, value) {
   const entry = { url, title: value.title, channelId: value.channelId, tasks: value.tasks, taskCount: value.tasks.length, lastReadAt: new Date().toISOString() };
   courseLibrary = [entry, ...courseLibrary.filter(item => item.url !== url)].slice(0, 100);
-  await saveCourseLibrary().catch(() => {});
+  await saveCourseLibrary().catch(error => status({ type: 'log', message: error.message }));
   return entry;
 }
 
@@ -134,7 +131,7 @@ async function createMainWindow() {
   handle('clear-license', () => license.clear());
   handle('remove-course', async ({ url } = {}) => {
     courseLibrary = courseLibrary.filter(item => item.url !== url);
-    await saveCourseLibrary().catch(() => {});
+    await saveCourseLibrary().catch(error => status({ type: 'log', message: error.message }));
     status({ type: 'library', courses: courseLibrary });
     return { ok: true, courses: courseLibrary };
   });
@@ -143,7 +140,7 @@ async function createMainWindow() {
     if (result.canceled || !result.filePaths[0]) return null;
     outputDir = result.filePaths[0];
     allowedOutputDirs.add(path.resolve(outputDir));
-    await savePreferences().catch(() => {});
+    await savePreferences().catch(error => status({ type: 'log', message: error.message }));
     return outputDir;
   });
   handle('open-login', ({ url } = {}) => {

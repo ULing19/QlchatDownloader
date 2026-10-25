@@ -2,13 +2,17 @@
 
 独立 Windows 桌面程序，将账号可正常播放的千聊课程保存为本地 MP4。支持内置浏览器登录、订单授权、读取课程目录、保存本机课程库、按章节选择课程和批量下载。
 
-项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.2.1](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.2.1)。
+项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.2.2](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.2.2)。
 
-直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.1/QlchatDownloader-0.2.1-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.1/QlchatDownloader-0.2.1-x64-Portable.exe)
+直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.2/QlchatDownloader-0.2.2-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.2/QlchatDownloader-0.2.2-x64-Portable.exe)
+
+## 0.2.2 授权保存修复
+
+修复 Windows 应用容器将文件重定向到其他磁盘时，激活后保存授权报 `EXDEV` 的问题。写入临时文件后确认其真实物理目录，再在同目录完成原子替换；重命名失败时保留原文件并清理临时文件。课程库和保存位置也采用相同方式保存。升级保留千聊登录会话、设备标识和本机数据。
 
 ## 安装使用
 
-1. 运行 `QlchatDownloader-0.2.1-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.2.1-x64-Portable.exe`。
+1. 运行 `QlchatDownloader-0.2.2-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.2.2-x64-Portable.exe`。
 2. 粘贴千聊课程或单节链接，打开登录窗口，用购课账号完成登录。
 3. 读取课程目录，勾选要下载的章节或单节课程。
 4. 输入闲鱼订单号完成本机授权（订单号本身就是兑换码，不需要另填兑换码），选择保存文件夹，开始下载。可查看进度、取消任务和打开保存位置。

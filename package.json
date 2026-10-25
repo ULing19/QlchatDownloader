@@ -1,6 +1,6 @@
 {
   "name": "qlchat-desktop-downloader",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "description": "千聊课程下载器：本机登录、课程目录和批量下载",
   "author": "ULing19",

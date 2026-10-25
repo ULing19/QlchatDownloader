@@ -176,6 +176,7 @@ test('desktop blocks unlicensed downloads and waits for cleanup before closing',
       if (name === './core/download') return { DownloadManager: Manager };
       if (name === './core/qlchat') return { QlchatClient: Client, courseUrl: input => input, ORIGIN: 'https://h5.qlchat.com', USER_AGENT: 'test' };
       if (name === './core/license') return { QlchatLicense: License };
+      if (name === './core/storage') return { atomicWriteFile: async () => {} };
       return require(name);
     },
   };

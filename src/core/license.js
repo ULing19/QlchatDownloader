@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const { atomicWriteFile } = require('./storage');
 
 const LICENSE_API = 'https://license.uling19.com';
 const PRODUCT_ID = 'qlchat';
@@ -33,12 +34,14 @@ function safeDetail(payload, fallback) {
 }
 
 class QlchatLicense {
-  constructor({ storageDir, fetchImpl = globalThis.fetch, safeStorage, deviceId } = {}) {
+  constructor({ storageDir, fetchImpl = globalThis.fetch, safeStorage, deviceId, writeFileAtomic = atomicWriteFile } = {}) {
     if (!storageDir || typeof fetchImpl !== 'function') throw new TypeError('storageDir and fetchImpl are required');
     this.storageDir = storageDir;
     this.fetchImpl = fetchImpl;
     this.safeStorage = safeStorage;
     this._deviceId = deviceId || null;
+    this._writeFileAtomic = writeFileAtomic;
+    this._devicePromise = null;
     this._state = { authorized: false, detail: '尚未激活' };
   }
 
@@ -46,15 +49,24 @@ class QlchatLicense {
 
   async _device() {
     if (this._deviceId) return this._deviceId;
-    const file = path.join(this.storageDir, 'install-id');
-    try {
-      this._deviceId = (await fs.readFile(file, 'utf8')).trim();
-    } catch {
-      this._deviceId = crypto.randomBytes(24).toString('hex');
-      await fs.mkdir(this.storageDir, { recursive: true });
-      await fs.writeFile(file, this._deviceId, { encoding: 'utf8', mode: 0o600 });
+    if (!this._devicePromise) {
+      this._devicePromise = (async () => {
+        const file = path.join(this.storageDir, 'install-id');
+        try {
+          const saved = (await fs.readFile(file, 'utf8')).trim();
+          if (!saved) throw new QlchatLicenseError('本机设备标识无效，请联系支持人员恢复。', 'storage');
+          return saved;
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw new QlchatLicenseError('无法读取本机设备标识，请检查应用数据目录权限。', 'storage');
+          const deviceId = crypto.randomBytes(24).toString('hex');
+          await this._writeFileAtomic(file, deviceId);
+          return deviceId;
+        }
+      })();
     }
-    return this._deviceId;
+    try { this._deviceId = await this._devicePromise; return this._deviceId; }
+    catch { throw new QlchatLicenseError('无法保存本机设备标识，请检查应用数据目录权限。', 'storage'); }
+    finally { this._devicePromise = null; }
   }
 
   async _deviceHash() {
@@ -80,15 +92,18 @@ class QlchatLicense {
   }
 
   async _save(value) {
-    await fs.mkdir(this.storageDir, { recursive: true });
     if (!this.safeStorage?.isEncryptionAvailable?.()) {
       throw new QlchatLicenseError('本机安全存储不可用，授权未保存。请在受支持的 Windows 桌面环境重试。', 'storage');
     }
-    const text = JSON.stringify(value);
-    const encoded = this.safeStorage.encryptString(text).toString('base64');
-    const temp = this._licenseFile() + '.tmp';
-    await fs.writeFile(temp, encoded, 'utf8');
-    await fs.rename(temp, this._licenseFile());
+    try {
+      const text = JSON.stringify(value);
+      const encoded = this.safeStorage.encryptString(text).toString('base64');
+      await this._writeFileAtomic(this._licenseFile(), encoded);
+    } catch (error) {
+      const code = String(error.storageCode || error.code || 'UNKNOWN');
+      const detail = /^[A-Z][A-Z0-9_]{1,24}$/.test(code) ? `（${code}）` : '';
+      throw new QlchatLicenseError(`本机授权保存失败${detail}，请确认应用数据目录可写后重试。`, 'storage');
+    }
   }
 
   async _request(route, orderId, code) {
