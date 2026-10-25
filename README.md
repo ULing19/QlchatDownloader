@@ -2,6 +2,10 @@
 
 独立 Windows 桌面程序，将账号可正常播放的千聊课程保存为本地 MP4。支持内置浏览器登录、订单授权、读取课程目录、保存本机课程库、按章节选择课程和批量下载。
 
+项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.2.0](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.2.0)。
+
+直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.0/QlchatDownloader-0.2.0-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.0/QlchatDownloader-0.2.0-x64-Portable.exe)
+
 ## 安装使用
 
 1. 运行 `千聊下载器-0.2.0-x64-Setup.exe`，选择安装位置；也可直接运行 `千聊下载器-0.2.0-x64-Portable.exe`。
