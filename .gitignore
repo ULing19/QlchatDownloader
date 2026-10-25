@@ -1,0 +1,10 @@
+node_modules/
+assets/ffmpeg.exe
+dist/
+.electron-builder-cache/
+tmp/
+output/
+*.log
+*.part.mp4
+*.asar
+.DS_Store

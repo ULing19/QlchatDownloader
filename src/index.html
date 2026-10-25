@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>千聊下载器</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 5v14m-5-5 5 5 5-5M7 23v4h18v-4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+        <div><h1>千聊下载器</h1><p>把好课程，留在身边</p></div>
+      </div>
+      <div class="topbar-right"><span class="local-badge"><i></i>本地保存</span><span class="version" id="version">v0.1.0</span></div>
+    </header>
+
+    <div class="workspace">
+      <aside class="sidebar" aria-label="课程和下载设置">
+        <section class="panel source-panel">
+          <div class="section-kicker"><span>01</span> 添加课程</div>
+          <label class="field-label" for="course-url">千聊课程链接</label>
+          <textarea id="course-url" rows="3" spellcheck="false" placeholder="粘贴千聊单节或整套课程的分享链接" aria-describedby="source-hint"></textarea>
+          <p class="field-hint" id="source-hint">支持千聊课程页与分享链接，自动整理整套目录。</p>
+          <div class="source-actions">
+            <button id="login-button" class="button button-secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 7a3 3 0 1 1 6 0 3 3 0 0 1-6 0Zm-3 9a6 6 0 0 1 12 0M15 3h2v3M3 6V3h2"/></svg>登录千聊</button>
+            <button id="parse-button" class="button button-primary" type="button">读取课程<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg></button>
+          </div>
+          <div class="notice notice-neutral" id="source-status" role="status"><span class="notice-dot" aria-hidden="true"></span><span id="source-status-text">首次使用，请先在登录窗口完成登录。</span></div>
+        </section>
+
+        <section class="panel license-panel" aria-label="订单授权">
+          <div class="section-kicker"><span>02</span> 订单授权</div>
+          <div class="notice notice-neutral" id="license-status" role="status"><span class="notice-dot" aria-hidden="true"></span><span id="license-status-text">下载前需要订单授权。</span></div>
+          <label class="field-label" for="license-order">闲鱼订单号</label>
+          <input id="license-order" class="license-input" type="text" autocomplete="off" placeholder="输入订单号激活本机">
+          <div class="source-actions"><button id="activate-button" class="button button-primary" type="button">激活下载权限</button><button id="clear-license-button" class="text-button" type="button" hidden>清除授权</button></div>
+          <p class="field-hint">订单授权绑定本机，最多支持两台设备。订单号不会写入运行日志。</p>
+        </section>
+
+        <section class="panel library-panel" aria-label="本机课程库">
+          <div class="section-kicker"><span>03</span> 本机课程库</div>
+          <p class="field-hint">已读取的课程会保存在本机，登录状态也会保留。</p>
+          <div id="course-library-list" class="course-library-list"><p class="library-empty">还没有已读取课程。</p></div>
+        </section>
+
+        <section class="panel output-panel">
+          <div class="section-kicker"><span>04</span> 保存到电脑</div>
+          <label class="field-label" for="output-dir">保存文件夹</label>
+          <div class="folder-field"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 6V4h6l2 2h8v10H2V6Z"/></svg><input id="output-dir" type="text" readonly aria-label="保存文件夹" placeholder="正在读取保存位置…"></div>
+          <div class="folder-actions"><button id="choose-output-button" class="text-button" type="button">更改位置</button><button id="open-output-button" class="text-button" type="button">打开文件夹<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3H3v10h10v-3M9 3h4v4M7 9l6-6"/></svg></button></div>
+          <div class="save-tree" aria-label="文件保存结构"><span>课程名称</span><span>章节名称</span><span>01 · 课时名称.mp4</span></div>
+          <p class="field-hint">按课程、章节自动归档，保留完整课时名称。</p>
+        </section>
+
+        <section class="download-card" aria-label="下载控制">
+          <div class="download-card-top"><span class="download-eyebrow">READY TO KEEP</span><span id="selected-badge">尚未选择</span></div>
+          <div class="selection-summary"><strong id="selected-count">0</strong><span>节课程待保存</span></div>
+          <p id="selection-note">读取课程后，在右侧勾选需要的课时。</p>
+          <button id="download-button" class="button button-download" type="button" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v10m-4-4 4 4 4-4M3 14v3h14v-3"/></svg><span id="download-button-label">下载所选课程</span></button>
+          <button id="cancel-button" class="button button-cancel" type="button" hidden>停止下载</button>
+          <div class="download-footnote"><span class="tiny-dot"></span>登录信息仅保存在此电脑</div>
+        </section>
+        <p class="sidebar-footnote">下载当前账号可观看的课程<br>文件就绪后可使用本地播放器播放</p>
+      </aside>
+
+      <main class="content-panel">
+        <section class="catalog-header">
+          <div><div class="section-kicker"><span>03</span> 选择并下载</div><h2 id="course-title">你的课程书架</h2><p id="course-subtitle">从一条课程链接开始，把学习内容整理得井井有条。</p></div>
+          <span id="course-count" class="count-chip" hidden>0 节课程</span>
+        </section>
+        <div class="catalog-toolbar" id="catalog-toolbar" hidden>
+          <label class="checkbox-label select-all-label"><input type="checkbox" id="select-all"><span>全选课程</span></label>
+          <span class="toolbar-divider"></span><button id="clear-selection-button" class="text-button" type="button">取消选择</button>
+          <button id="toggle-chapters-button" class="text-button toolbar-end" type="button">收起章节</button>
+        </div>
+
+        <section class="catalog-area" id="catalog-area" aria-label="课程目录">
+          <div class="empty-state" id="empty-state">
+            <div class="shelf-illustration" aria-hidden="true"><div class="book book-one"></div><div class="book book-two"></div><div class="book book-three"></div><div class="shelf-line"></div><div class="shelf-check"><svg viewBox="0 0 20 20"><path d="m5 10 3 3 7-7"/></svg></div></div>
+            <h3>课程整理好，学习更从容</h3>
+            <p>在左侧粘贴课程链接，完成登录后读取目录。<br>你可以按章节选择，也可以一次保存整套课程。</p>
+            <div class="empty-steps"><span><b>1</b>粘贴链接</span><i></i><span><b>2</b>登录读取</span><i></i><span><b>3</b>选择下载</span></div>
+          </div>
+          <div class="chapter-list" id="chapter-list" hidden></div>
+        </section>
+
+        <section class="batch-summary" id="batch-summary" aria-live="polite" hidden>
+          <div class="batch-summary-line"><strong id="batch-status">准备下载</strong><span id="batch-counts">0 / 0</span></div>
+          <div class="progress-track overall-track" role="progressbar" id="overall-progress" aria-label="本次下载进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div id="overall-progress-fill"></div></div>
+          <p id="batch-detail">正在准备所选课程…</p>
+        </section>
+
+        <section class="log-panel">
+          <button id="log-toggle" class="log-toggle" type="button" aria-expanded="true" aria-controls="log-content"><span><i class="activity-dot"></i>运行记录</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 10 4-4 4 4"/></svg></button>
+          <div class="log-content" id="log-content" role="log" aria-live="polite" aria-label="运行记录"><p class="log-placeholder">准备就绪，等待添加课程。</p></div>
+        </section>
+      </main>
+    </div>
+    <div id="toast" class="toast" role="status" hidden></div>
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,80 @@
+{
+  "name": "qlchat-desktop-downloader",
+  "version": "0.2.0",
+  "private": true,
+  "description": "千聊课程下载器：本机登录、课程目录和批量下载",
+  "author": "ULing19",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/start.ps1",
+    "test": "node --test tests/*.test.js",
+    "build:win": "powershell -NoProfile -ExecutionPolicy Bypass -File tools/build-win.ps1"
+  },
+  "devDependencies": {
+    "electron": "41.2.0",
+    "electron-builder": "26.8.1"
+  },
+  "build": {
+    "appId": "com.local.qlchat.downloader",
+    "productName": "千聊下载器",
+    "executableName": "QlchatDownloader",
+    "electronVersion": "41.2.0",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist",
+      "buildResources": "assets"
+    },
+    "files": [
+      "src/**/*",
+      "assets/app.ico",
+      "assets/app.png",
+      "README.md",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/ffmpeg.exe",
+        "to": "ffmpeg.exe"
+      },
+      {
+        "from": "assets/THIRD_PARTY_NOTICES.txt",
+        "to": "THIRD_PARTY_NOTICES.txt"
+      },
+      {
+        "from": "assets/COPYING.GPLv3.txt",
+        "to": "COPYING.GPLv3.txt"
+      },
+      {
+        "from": "assets/FFMPEG-BUILD.txt",
+        "to": "FFMPEG-BUILD.txt"
+      }
+    ],
+    "win": {
+      "icon": "assets/app.ico",
+      "target": [
+        { "target": "nsis", "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "artifactName": "千聊下载器-${version}-${arch}-Setup.${ext}",
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "千聊下载器",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "assets/app.ico",
+      "uninstallerIcon": "assets/app.ico",
+      "installerLanguages": ["zh_CN"],
+      "language": "2052"
+    },
+    "portable": {
+      "artifactName": "千聊下载器-${version}-${arch}-Portable.${ext}"
+    }
+  }
+}
