@@ -20,7 +20,12 @@
     authorized: false,
     courses: [],
     licenseBusy: false,
+    studyCourses: [],
+    studySyncedAt: null,
+    studyLoaded: false,
+    view: 'course',
   };
+  const studyUrl = 'https://h5.qlchat.com/wechat/page/mine/study';
   let toastTimer;
   const statusLabels = {
     pending: '待下载', resolving: '解析中', downloading: '下载中',
@@ -80,6 +85,10 @@
     return url.href;
   }
 
+  function isStudyPage(url) {
+    try { return new URL(url).pathname.replace(/\/$/, '') === '/wechat/page/mine/study'; } catch { return false; }
+  }
+
   function refreshControls() {
     const tasks = state.course?.tasks || [];
     const locked = state.parsing || state.running;
@@ -87,9 +96,15 @@
     $('login-button').disabled = locked || state.openingLogin;
     $('course-url').disabled = locked;
     $('parse-button').firstChild.textContent = state.parsing ? '正在读取…' : '读取课程';
+    if (!state.parsing && isStudyPage($('course-url').value.trim())) $('parse-button').firstChild.textContent = '同步学习列表';
+    $('sync-study-button').disabled = locked;
+    $('refresh-study-button').disabled = locked;
+    $('show-study-button').disabled = locked;
+    $('show-study-button').hidden = !state.studyLoaded;
+    for (const button of document.querySelectorAll('.study-course-open')) button.disabled = locked || button.dataset.supported === 'false';
     $('choose-output-button').disabled = state.running;
     $('open-output-button').disabled = !state.outputDir;
-    $('download-button').disabled = locked || !state.authorized || !state.selected.size || !state.outputDir;
+    $('download-button').disabled = locked || state.view === 'study' || !state.authorized || !state.selected.size || !state.outputDir;
     $('download-button-label').textContent = state.running ? '正在保存课程…' : '下载所选课程';
     $('cancel-button').hidden = !state.running;
     $('cancel-button').disabled = state.stopping;
@@ -112,6 +127,91 @@
       group.checkbox.checked = count === group.ids.length;
       group.checkbox.indeterminate = count > 0 && count < group.ids.length;
     }
+  }
+
+  function renderStudyCourses() {
+    const list = $('study-course-list');
+    list.replaceChildren();
+    const query = $('study-search').value.trim().toLocaleLowerCase();
+    const sourceFilter = $('study-source-filter').value;
+    const visible = state.studyCourses.filter(item => {
+      const sources = Array.isArray(item.sources) ? item.sources : item.source === 'both' ? ['purchased', 'recent'] : [item.source || 'purchased'];
+      const matchesSource = sourceFilter === 'both' || sources.includes(sourceFilter);
+      return matchesSource && `${item.title || ''} ${item.liveName || ''}`.toLocaleLowerCase().includes(query);
+    });
+    $('course-count').textContent = `${visible.length} / ${state.studyCourses.length} 项`;
+    for (const course of visible) {
+      const card = element('article', 'study-course-card');
+      card.append(element('h3', '', course.title || '未命名课程'));
+      const supported = course.supported !== false && ['channel', 'topic'].includes(course.kind) && typeof course.url === 'string';
+      const sources = Array.isArray(course.sources) ? course.sources : [course.source];
+      const sourceLabel = sources.includes('purchased') && sources.includes('recent') ? '我的课程 · 最近学习' : sources.includes('recent') ? '最近学习' : '我的课程';
+      const details = [sourceLabel, course.kind === 'channel' ? '系列课程' : course.kind === 'topic' ? '单节课程' : '特殊课程'];
+      if (course.liveName) details.push(course.liveName);
+      if (Number(course.courseCount) > 0) details.push(`${Number(course.courseCount)} 节`);
+      card.append(element('p', 'study-course-meta', details.join(' · ')));
+      const button = element('button', 'button button-secondary study-course-open', supported ? '读取目录' : '暂不支持此类型');
+      button.type = 'button';
+      button.dataset.supported = String(supported);
+      button.disabled = state.parsing || state.running || !supported;
+      button.addEventListener('click', () => {
+        if (state.parsing || state.running || !supported) return;
+        $('course-url').value = course.url;
+        $('parse-button').click();
+      });
+      card.append(button);
+      list.append(card);
+    }
+    $('study-list-empty').hidden = visible.length > 0;
+    $('study-list-empty').textContent = state.studyCourses.length ? '没有找到匹配的课程，请修改搜索词。' : '当前账号没有可显示的课程。请确认登录渠道，或重新同步。';
+  }
+
+  function showStudyCourses() {
+    if (state.running) return;
+    state.view = 'study';
+    $('course-title').textContent = '我的学习';
+    $('course-subtitle').textContent = '同时收录“我的课程”和“最近学习”，选择课程后读取章节目录。';
+    $('course-count').textContent = `${state.studyCourses.length} 门课程`;
+    $('course-count').hidden = false;
+    $('catalog-toolbar').hidden = true;
+    $('empty-state').hidden = true;
+    $('chapter-list').hidden = true;
+    $('batch-summary').hidden = true;
+    $('study-courses').hidden = false;
+    let date = state.studySyncedAt ? new Date(state.studySyncedAt) : null;
+    const when = date && !Number.isNaN(date.getTime()) ? `上次同步：${date.toLocaleString('zh-CN', { hour12: false })}。` : '';
+    $('study-cache-note').textContent = `${when}切换账号或购买新课程后请重新同步。`;
+    renderStudyCourses();
+    refreshControls();
+  }
+
+  function setStudyCourses(courses, syncedAt) {
+    const seen = new Set();
+    state.studyCourses = (Array.isArray(courses) ? courses : []).filter(item => item && typeof item.title === 'string' && (typeof item.url === 'string' || item.kind === 'unsupported')).filter(item => {
+      const key = `${item.courseType || item.kind}:${item.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    state.studySyncedAt = syncedAt || null;
+    state.studyLoaded = true;
+    showStudyCourses();
+  }
+
+  async function syncStudy() {
+    if (state.parsing || state.running) return;
+    state.parsing = true;
+    refreshControls();
+    setSourceStatus('正在同步千聊账号的课程列表…', 'busy');
+    addLog('正在同步我的课程和最近学习…');
+    try {
+      const result = await api.syncStudyCourses({ url: studyUrl });
+      if (!result?.ok || result.complete !== true) throw new Error(result?.error || '课程列表未完整同步，请重试。');
+      setStudyCourses(result.courses, result.syncedAt);
+      setSourceStatus(`已同步 ${state.studyCourses.length} 项课程和学习记录，选择后读取目录。`, 'success');
+      addLog(`我的课程和最近学习同步完成，合并后共 ${state.studyCourses.length} 项。`);
+    } catch (error) {
+      setSourceStatus(error.message, 'error'); addLog(error.message, true); showToast(error.message);
+    } finally { state.parsing = false; refreshControls(); }
   }
 
   function renderLicense(license) {
@@ -190,6 +290,8 @@
     const seen = new Set();
     const tasks = course.tasks.filter((task) => task && task.id != null).map((task, index) => ({ ...task, id: String(task.id), index: task.index || index + 1 })).filter((task) => { if (seen.has(task.id)) return false; seen.add(task.id); return true; });
     state.course = { ...course, tasks };
+    state.view = 'course';
+    $('study-courses').hidden = true;
     state.selected = new Set(tasks.map((task) => task.id));
     state.taskStates.clear();
     state.taskElements.clear();
@@ -300,7 +402,7 @@
   $('login-button').addEventListener('click', async () => {
     if (state.openingLogin || state.parsing || state.running) return;
     let url;
-    try { url = getInputUrl(); } catch (error) { setSourceStatus(error.message, 'error'); showToast(error.message); return; }
+    try { url = $('course-url').value.trim() ? getInputUrl() : studyUrl; } catch (error) { setSourceStatus(error.message, 'error'); showToast(error.message); return; }
     state.openingLogin = true;
     refreshControls();
     setSourceStatus('正在打开千聊登录窗口…', 'busy');
@@ -337,6 +439,7 @@
     if (state.parsing || state.running) return;
     let url;
     try { url = getInputUrl(); } catch (error) { setSourceStatus(error.message, 'error'); showToast(error.message); return; }
+    if (isStudyPage(url)) { await syncStudy(); return; }
     state.parsing = true;
     refreshControls();
     setSourceStatus('正在读取课程信息和章节目录…', 'busy');
@@ -352,6 +455,13 @@
     } catch (error) { setSourceStatus(error.message, 'error'); addLog(error.message, true); showToast(error.message); }
     finally { state.parsing = false; refreshControls(); }
   });
+
+  $('sync-study-button').addEventListener('click', syncStudy);
+  $('refresh-study-button').addEventListener('click', syncStudy);
+  $('show-study-button').addEventListener('click', showStudyCourses);
+  $('study-search').addEventListener('input', renderStudyCourses);
+  $('study-source-filter').addEventListener('change', renderStudyCourses);
+  $('course-url').addEventListener('input', refreshControls);
 
   $('choose-output-button').addEventListener('click', async () => {
     try {
@@ -426,6 +536,7 @@
     if (event.type === 'log') addLog(event.message);
     else if (event.type === 'license') renderLicense(event);
     else if (event.type === 'library') renderLibrary(event.courses);
+    else if (event.type === 'study' && !state.running) setStudyCourses(event.courses, event.syncedAt);
     else if (event.type === 'course' && !state.running) setCourse(event.course);
     else if (event.type === 'progress') updateTask(event);
     else if (event.type === 'batch') {
@@ -455,6 +566,7 @@
     $('output-dir').title = state.outputDir;
     renderLibrary(initial?.courses || []);
     renderLicense(initial?.license || { authorized: false, detail: '尚未激活' });
+    if (initial?.studySyncedAt) setStudyCourses(initial.studyCourses, initial.studySyncedAt);
     if (initial?.version) $('version').textContent = `v${initial.version}`;
     refreshControls();
   }).catch(() => { addLog('未能读取默认保存位置，请手动选择文件夹。', true); renderLibrary([]); renderLicense({ authorized: false, detail: '授权状态读取失败' }); });

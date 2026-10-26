@@ -1,10 +1,16 @@
 # 千聊下载器
 
-独立 Windows 桌面程序，将账号可正常播放的千聊课程保存为本地 MP4。支持内置浏览器登录、订单授权、读取课程目录、保存本机课程库、按章节选择课程和批量下载。
+独立 Windows 桌面程序，将账号可正常播放的千聊视频课程保存为本地 MP4。支持内置浏览器登录、订单授权、同步“我的课程”和“最近学习”、保存本机课程库、按章节选择课程和批量下载。
 
-项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.2.2](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.2.2)。
+项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.3.0](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.3.0)。
 
-直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.2/QlchatDownloader-0.2.2-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.2.2/QlchatDownloader-0.2.2-x64-Portable.exe)
+直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.0/QlchatDownloader-0.3.0-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.0/QlchatDownloader-0.3.0-x64-Portable.exe)
+
+## 0.3.0 我的学习
+
+支持 [千聊“我的学习”页面](https://h5.qlchat.com/wechat/page/mine/study)。点击“同步学习列表”会分别读取“我的课程”和“最近学习”的全部分页，合并重复条目并保留两种来源标记。可按来源筛选、搜索课程并读取目录。同步完成后列表保存在本机，重新启动仍可查看；任一来源读取失败时保留上一次完整列表。训练营、共读等特殊类型保留显示并标注暂不支持。
+
+已用登录账号验证：我的课程 8 门、最近学习 100 条，最近学习共读取 11 页。列表中的音频课、直播中课程等仍可能没有可下载视频；课程可列出不表示所有类型都能下载。
 
 ## 0.2.2 授权保存修复
 
@@ -12,12 +18,12 @@
 
 ## 安装使用
 
-1. 运行 `QlchatDownloader-0.2.2-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.2.2-x64-Portable.exe`。
-2. 粘贴千聊课程或单节链接，打开登录窗口，用购课账号完成登录。
-3. 读取课程目录，勾选要下载的章节或单节课程。
+1. 运行 `QlchatDownloader-0.3.0-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.3.0-x64-Portable.exe`。
+2. 打开登录窗口，用购课账号完成登录。下载器和外部网页使用各自的登录会话。
+3. 点击“同步学习列表”，从“我的课程”或“最近学习”中选择课程并读取目录；也可直接粘贴单节或整套课程链接。勾选要下载的章节或单节课程。
 4. 输入闲鱼订单号完成本机授权（订单号本身就是兑换码，不需要另填兑换码），选择保存文件夹，开始下载。可查看进度、取消任务和打开保存位置。
 
-账号登录状态只保存在本机，此程序使用独立的应用数据目录，与钉钉及小鹅通下载器分开。已读取的课程会保存到本机课程库，重新打开程序即可查看并再次读取。当前课程库记录的是本机已读取过的课程，平台没有提供可稳定依赖的“自动列出全部购买课程”接口。无需将 Cookie、验证码或密码发送给其他人。
+账号登录状态只保存在本机，此程序使用独立的应用数据目录，与钉钉及小鹅通下载器分开。学习列表按当前登录账号从平台同步，本机课程库记录已读取过目录的课程。切换账号或购买新课程后请重新同步；平台学习数据可能延迟更新。无需将 Cookie、验证码或密码发送给其他人。
 
 每节课程下载前会重新获取播放地址，避免长队列中签名过期。再次下载时，已通过本地完整性检查的课时会自动跳过，未完成的临时文件会清理后继续。日志不显示签名地址和登录凭据。同名文件会另行命名，不覆盖已有视频。
 
@@ -33,6 +39,8 @@
 - 仅处理当前账号有权访问的课程；未购课、失效课程、直播中内容或特殊播放器可能无法下载。
 - 不支持 Widevine 等 DRM 课程。平台更新可能需要更新解析逻辑。
 - 内置浏览器可能无法播放部分视频，下载结果以下载完成后的文件检查为准。
+
+交流 QQ 群：1129732494。
 
 已用一套含 42 节课的课程完成整套下载：42 个 MP4、0 个临时文件、0 个坏文件，总时长约 32.14 小时。第一节为 720P、42 分 46 秒，全部课时均通过 FFprobe 音视频文件检查。
 

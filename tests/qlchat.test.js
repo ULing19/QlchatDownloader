@@ -2,12 +2,25 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { courseUrl, parseInitialState, findCourseMetadata, buildTasks, decodePlayUrl, QlchatClient, QlchatError } = require('../src/core/qlchat');
+const { courseUrl, studyUrl, loginUrl, STUDY_URL, parseInitialState, findCourseMetadata, buildTasks, decodePlayUrl, QlchatClient, QlchatError } = require('../src/core/qlchat');
 
 test('accept only official course links and canonicalize tracking parameters', () => {
   assert.equal(courseUrl('分享课程 https://h5.qlchat.com/wechat/page/topic-simple-video?topicId=2000000001&byhand=1'), 'https://h5.qlchat.com/wechat/page/topic-simple-video?topicId=2000000001');
   assert.equal(courseUrl('https://h5.qlchat.com/wechat/page/channel-intro?channelId=2000000002'), 'https://h5.qlchat.com/wechat/page/channel-intro?channelId=2000000002');
   for (const input of ['file:///C:/x', 'https://qlchat.com.evil.example/?topicId=2000000001', 'https://other.example/?topicId=2000000001', 'https://user:pass@h5.qlchat.com/?topicId=2000000001', 'https://h5.qlchat.com/?topicId=oops']) assert.throws(() => courseUrl(input));
+});
+
+test('learning page accepts only the official HTTPS path and login preserves its destination', () => {
+  assert.equal(studyUrl('https://h5.qlchat.com/wechat/page/mine/study?loginType=qrCode'), STUDY_URL);
+  assert.equal(loginUrl(STUDY_URL), STUDY_URL);
+  assert.equal(loginUrl(), STUDY_URL);
+  assert.equal(loginUrl('https://h5.qlchat.com/?topicId=2000000001'), 'https://h5.qlchat.com/wechat/page/topic-simple-video?topicId=2000000001');
+  for (const input of ['http://h5.qlchat.com/wechat/page/mine/study', 'https://h5.qlchat.com.evil.example/wechat/page/mine/study', 'https://h5.qlchat.com/page/login', 'https://h5.qlchat.com/wechat/page/mine/study/other']) assert.throws(() => studyUrl(input));
+});
+
+test('login HTML redirect is recognized even when Electron omits response.url', async () => {
+  const client = new QlchatClient({ fetchImpl: async () => ({ ok: true, status: 200, text: async () => '<!doctype html><div class="login-page"><input type="password"></div>' }) });
+  await assert.rejects(client.request(STUDY_URL), e => e instanceof QlchatError && e.reasonCode === 'LOGIN_REQUIRED' && /登录/.test(e.message));
 });
 
 test('parse embedded JSON without executing page JavaScript or breaking on braces in strings', () => {
@@ -174,7 +187,7 @@ test('desktop blocks unlicensed downloads and waits for cleanup before closing',
       if (name === 'electron') return electron;
       if (name === 'node:fs/promises') return { readFile: async () => { throw new Error('first launch'); } };
       if (name === './core/download') return { DownloadManager: Manager };
-      if (name === './core/qlchat') return { QlchatClient: Client, courseUrl: input => input, ORIGIN: 'https://h5.qlchat.com', USER_AGENT: 'test' };
+      if (name === './core/qlchat') return { QlchatClient: Client, courseUrl: input => input, loginUrl: input => input, STUDY_URL: 'https://h5.qlchat.com/wechat/page/mine/study', ORIGIN: 'https://h5.qlchat.com', USER_AGENT: 'test' };
       if (name === './core/license') return { QlchatLicense: License };
       if (name === './core/storage') return { atomicWriteFile: async () => {} };
       return require(name);

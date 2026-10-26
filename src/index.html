@@ -14,7 +14,7 @@
         <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M16 5v14m-5-5 5 5 5-5M7 23v4h18v-4" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
         <div><h1>千聊下载器</h1><p>把好课程，留在身边</p></div>
       </div>
-      <div class="topbar-right"><span class="local-badge"><i></i>本地保存</span><span class="version" id="version">v0.2.2</span></div>
+      <div class="topbar-right"><span class="local-badge"><i></i>本地保存</span><span class="version" id="version">v0.3.0</span></div>
     </header>
 
     <div class="workspace">
@@ -28,6 +28,8 @@
             <button id="login-button" class="button button-secondary" type="button"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 7a3 3 0 1 1 6 0 3 3 0 0 1-6 0Zm-3 9a6 6 0 0 1 12 0M15 3h2v3M3 6V3h2"/></svg>登录千聊</button>
             <button id="parse-button" class="button button-primary" type="button">读取课程<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12m-5-5 5 5-5 5"/></svg></button>
           </div>
+          <div class="study-source-actions"><button id="sync-study-button" class="button button-secondary" type="button">同步学习列表</button><button id="show-study-button" class="text-button" type="button" hidden>查看课程列表</button></div>
+          <p class="field-hint">登录后同时同步“我的课程”和“最近学习”，也可粘贴“我的学习”页面链接。</p>
           <div class="notice notice-neutral" id="source-status" role="status"><span class="notice-dot" aria-hidden="true"></span><span id="source-status-text">首次使用，请先在登录窗口完成登录。</span></div>
         </section>
 
@@ -85,6 +87,12 @@
             <div class="empty-steps"><span><b>1</b>粘贴链接</span><i></i><span><b>2</b>登录读取</span><i></i><span><b>3</b>选择下载</span></div>
           </div>
           <div class="chapter-list" id="chapter-list" hidden></div>
+          <div class="study-courses" id="study-courses" hidden>
+            <div class="study-toolbar"><label for="study-search">查找课程</label><input id="study-search" type="search" placeholder="输入课程名称或知识店铺" autocomplete="off"><label for="study-source-filter">来源</label><select id="study-source-filter" aria-label="筛选课程来源"><option value="both">全部课程</option><option value="purchased">我的课程</option><option value="recent">最近学习</option></select><button id="refresh-study-button" class="text-button" type="button">重新同步</button></div>
+            <p id="study-cache-note" class="study-cache-note"></p>
+            <div class="study-course-list" id="study-course-list"></div>
+            <p class="study-list-empty" id="study-list-empty" hidden>当前账号没有可显示的课程。</p>
+          </div>
         </section>
 
         <section class="batch-summary" id="batch-summary" aria-live="polite" hidden>

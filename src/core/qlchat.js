@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 
 const ORIGIN = 'https://h5.qlchat.com';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36';
+const STUDY_URL = `${ORIGIN}/wechat/page/mine/study`;
 
 class QlchatError extends Error {
   constructor(message, reasonCode) {
@@ -14,7 +15,7 @@ class QlchatError extends Error {
   }
 }
 
-function courseUrl(input) {
+function parseQlchatUrl(input) {
   const match = String(input || '').match(/https:\/\/[^\s<>"\u201c\u201d]+/i);
   if (!match) throw new QlchatError('请粘贴千聊的课程或单节视频链接。');
   let url;
@@ -22,11 +23,27 @@ function courseUrl(input) {
   if (!['h5.qlchat.com', 'www.qlchat.com', 'qlchat.com'].includes(url.hostname) || url.username || url.password || (url.port && url.port !== '443')) {
     throw new QlchatError('请使用 qlchat.com 官方千聊课程链接。');
   }
+  return url;
+}
+
+function studyUrl(input = STUDY_URL) {
+  const url = parseQlchatUrl(input);
+  if (url.pathname.replace(/\/$/, '') !== '/wechat/page/mine/study') throw new QlchatError('请使用千聊“我的学习”页面链接。');
+  return STUDY_URL;
+}
+
+function courseUrl(input) {
+  const url = parseQlchatUrl(input);
   const topicId = url.searchParams.get('topicId');
   const channelId = url.searchParams.get('channelId');
   if (topicId && /^\d{5,24}$/.test(topicId)) return `${ORIGIN}/wechat/page/topic-simple-video?topicId=${topicId}`;
   if (channelId && /^\d{5,24}$/.test(channelId)) return `${ORIGIN}/wechat/page/channel-intro?channelId=${channelId}`;
   throw new QlchatError('链接中没有课程编号，请复制课程页面的完整链接。');
+}
+
+function loginUrl(input = STUDY_URL) {
+  const url = parseQlchatUrl(input);
+  return url.pathname.replace(/\/$/, '') === '/wechat/page/mine/study' ? STUDY_URL : courseUrl(input);
 }
 
 function parseInitialState(html) {
@@ -79,6 +96,47 @@ function buildTasks(rows) {
   return rows.filter(r => r.businessType === 'topic' && r.topicPo?.style !== 'audio' && (!r.topicPo?.style || ['videoGraphic', 'video', 'liveVideo', 'simpleVideo'].includes(r.topicPo.style)))
     .filter(r => /^\d+$/.test(String(r.businessId)) && !seen.has(String(r.businessId)) && seen.add(String(r.businessId)))
     .map((r, index) => ({ id: String(r.businessId), title: cleanTitle(r.businessName || r.topicPo?.topic, `第 ${index + 1} 节`), chapter: chapters.get(String(r.chapterId)) || '课程视频', index: index + 1, duration: Number(r.topicPo?.duration) || undefined }));
+}
+
+function normalizeStudyCourse(row) {
+  if (!row || typeof row !== 'object') throw new QlchatError('课程列表格式发生变化，请更新下载器后重试。');
+  const originalId = row.bussinessId;
+  const id = String(originalId ?? '');
+  if (!/^\d{5,24}$/.test(id) || (typeof originalId === 'number' && !Number.isSafeInteger(originalId))) {
+    throw new QlchatError('课程列表中的课程编号无效，尚未同步完整。');
+  }
+  const type = String(row.type || row.purchaseType || '');
+  const special = (row.system && row.system !== 'QLCHAT') || row.isCamp === 'Y' || row.isNewCamp === 'Y' || !['channel', 'topic'].includes(type) || ['camp', 'new_book', 'book', 'activity', 'liveCamp', 'small_course'].includes(row.purchaseType);
+  const kind = special ? 'unsupported' : type;
+  const url = kind === 'channel' ? `${ORIGIN}/wechat/page/channel-intro?channelId=${id}` : kind === 'topic' ? `${ORIGIN}/wechat/page/topic-simple-video?topicId=${id}` : null;
+  const course = { id, title: cleanTitle(row.title || row.topicName, '未命名课程'), kind, supported: !special, courseType: type, source: 'purchased', url };
+  if (/^\d{5,24}$/.test(String(row.liveId || ''))) course.liveId = String(row.liveId);
+  if (Number.isFinite(Number(row.topicCount)) && Number(row.topicCount) >= 0) course.courseCount = Math.floor(Number(row.topicCount));
+  return course;
+}
+
+function normalizeRecentCourse(row) {
+  if (!row || typeof row !== 'object') throw new QlchatError('最近学习格式发生变化，请更新下载器后重试。');
+  const rawId = row.topicId || row.bussinessId;
+  const id = String(rawId ?? '');
+  if (!/^\d{5,24}$/.test(id) || (typeof rawId === 'number' && !Number.isSafeInteger(rawId))) {
+    throw new QlchatError('最近学习中的课程编号无效，尚未同步完整。');
+  }
+  const type = String(row.courseType || row.topicType || 'topic');
+  const supported = type === 'topic' && String(row.system || 'QLCHAT') === 'QLCHAT';
+  const course = {
+    id,
+    title: cleanTitle(row.skuTitle || row.topicName || row.title, '未命名最近学习'),
+    kind: supported ? 'topic' : 'unsupported',
+    supported,
+    courseType: type,
+    source: 'recent',
+    url: supported ? `${ORIGIN}/wechat/page/topic-simple-video?topicId=${id}` : null,
+  };
+  if (/^\d{5,24}$/.test(String(row.liveId || ''))) course.liveId = String(row.liveId);
+  if (Number.isFinite(Number(row.duration)) && Number(row.duration) > 0) course.duration = Number(row.duration);
+  if (Number.isFinite(Number(row.joinTime))) course.joinTime = Number(row.joinTime);
+  return course;
 }
 
 function decodePlayUrl(encoded) {
@@ -134,6 +192,11 @@ class QlchatClient {
         // Consume the body before releasing the timeout. A server may send headers
         // successfully and then stall indefinitely while streaming HTML or JSON.
         const text = await response.text();
+        // Electron session.fetch can omit response.url even after a login redirect.
+        // The official legacy sign-in page has no __INIT_STATE__ and this root class.
+        if (!text.includes('window.__INIT_STATE__') && /<[^>]+class=["'][^"']*\blogin-page\b/.test(text)) {
+          throw new QlchatError('请先在登录窗口完成千聊登录，然后重新同步我的课程。', 'LOGIN_REQUIRED');
+        }
         if (controller.signal.aborted) return aborted;
         return { ok: response.ok, status: response.status, url: response.url, headers: response.headers,
           text: async () => text, json: async () => JSON.parse(text) };
@@ -165,6 +228,93 @@ class QlchatClient {
       throw new QlchatError(`课程访问未通过（${String(code ?? '未知').replace(/[^\d-]/g, '').slice(0, 10) || '未知'}），请确认已登录且账号拥有该课程的播放权限。`);
     }
     return payload.data;
+  }
+
+  async getStudyCourses(input = STUDY_URL, options = {}) {
+    const url = studyUrl(input);
+    this.onLog('正在确认千聊学习页登录状态…');
+    const response = await this.request(url, options);
+    const initialState = parseInitialState(await response.text());
+    if (!initialState) throw new QlchatError('请先在登录窗口完成千聊登录，再同步我的课程。', 'LOGIN_REQUIRED');
+    const purchased = await this.getPurchasedCourses(options);
+    const recent = await this.getRecentCourses(options);
+    const courses = [], byKey = new Map();
+    for (const course of [...purchased, ...recent]) {
+      const key = `${course.kind}:${course.id}`;
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.sources = [...new Set([...(existing.sources || [existing.source]), course.source])];
+        existing.source = existing.sources.length > 1 ? 'both' : existing.sources[0];
+        continue;
+      }
+      const merged = { ...course, sources: [course.source] };
+      byKey.set(key, merged);
+      courses.push(merged);
+    }
+    return { courses, complete: true, unsupportedCount: courses.filter(c => !c.supported).length };
+  }
+
+  async getPurchasedCourses(options = {}) {
+    const courses = [], seen = new Set();
+    const size = 10;
+    for (let page = 1; page <= 200; page++) {
+      const data = await this.api('/api/wechat/transfer/h5/live/purchaseCourse', {
+        only: null, purchaseTypeList: 'all', type: 'all', page: { page, size }, pageSize: size,
+      }, undefined, options);
+      if (!data || !Object.prototype.hasOwnProperty.call(data, 'list') || (data.list !== null && !Array.isArray(data.list))) {
+        throw new QlchatError('我的课程返回格式发生变化，尚未同步完整，请稍后重试。');
+      }
+      const list = data.list || [];
+      let added = 0;
+      for (const row of list) {
+        const course = normalizeStudyCourse(row);
+        const key = `${course.courseType}:${course.id}`;
+        if (!seen.has(key)) { seen.add(key); courses.push(course); added++; }
+      }
+      this.onLog(`正在同步我的课程：已读取 ${courses.length} 门…`);
+      // The official purchased-course view uses page length. nextPage can be
+      // false even for a full page, so fetch again rather than truncating it.
+      const hasMore = data.nextPage === true || list.length >= size;
+      if (hasMore && !added) throw new QlchatError('课程列表分页异常，尚未同步完整，请重新同步。');
+      if (!hasMore) return courses;
+    }
+    throw new QlchatError('课程列表分页过多，尚未同步完整，请稍后重试。');
+  }
+
+  async getRecentCourses(options = {}) {
+    const courses = [], seen = new Set();
+    const size = 10;
+    let time = 0;
+    for (let page = 1; page <= 200; page++) {
+      const data = await this.api('/api/wechat/transfer/h5/topic/listRecentLearn', {
+        time,
+        page: { page, size },
+        beforeOrAfter: 'before',
+        type: 'all',
+        pageSize: size,
+      }, undefined, options);
+      if (!data || !Object.prototype.hasOwnProperty.call(data, 'learningList') || !Array.isArray(data.learningList)) {
+        throw new QlchatError('最近学习返回格式发生变化，尚未同步完整，请稍后重试。');
+      }
+      const list = data.learningList;
+      let added = 0;
+      for (const row of list) {
+        const course = normalizeRecentCourse(row);
+        const key = `${course.kind}:${course.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        courses.push(course);
+        added++;
+      }
+      this.onLog(`正在同步最近学习：已读取 ${courses.length} 门…`);
+      if (typeof data.nextPage !== 'boolean') throw new QlchatError('最近学习分页信息格式发生变化，尚未同步完整，请稍后重试。');
+      const next = list.at(-1)?.joinTime || list.at(-1)?.time || 0;
+      const hasMore = data.nextPage;
+      if (hasMore && (!added || !Number.isFinite(Number(next)) || Number(next) <= 0)) throw new QlchatError('最近学习分页异常，尚未同步完整，请重新同步。');
+      if (!hasMore) return courses;
+      time = Number(next);
+    }
+    throw new QlchatError('最近学习分页过多，尚未同步完整，请稍后重试。');
   }
 
   async getCourse(input, options = {}) {
@@ -210,4 +360,4 @@ class QlchatClient {
   }
 }
 
-module.exports = { QlchatError, ORIGIN, USER_AGENT, courseUrl, parseInitialState, findCourseMetadata, buildTasks, decodePlayUrl, isMediaHost, QlchatClient };
+module.exports = { QlchatError, ORIGIN, USER_AGENT, STUDY_URL, courseUrl, studyUrl, loginUrl, parseInitialState, findCourseMetadata, buildTasks, normalizeStudyCourse, normalizeRecentCourse, decodePlayUrl, isMediaHost, QlchatClient };

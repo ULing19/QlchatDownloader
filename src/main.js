@@ -3,7 +3,7 @@
 const { app, BrowserWindow, dialog, ipcMain, session, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
-const { QlchatClient, courseUrl, ORIGIN, USER_AGENT } = require('./core/qlchat');
+const { QlchatClient, courseUrl, loginUrl, STUDY_URL, QlchatError, ORIGIN, USER_AGENT } = require('./core/qlchat');
 const { DownloadManager } = require('./core/download');
 const { QlchatLicense } = require('./core/license');
 const { atomicWriteFile } = require('./core/storage');
@@ -20,6 +20,7 @@ let activeBatchPromise = null, exitPending = false, exitAllowed = false;
 const allowedOutputDirs = new Set();
 const tasksById = new Map();
 let courseLibrary = [];
+let studyCourses = [], studySyncedAt = null;
 
 function status(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('qlchat:status', payload);
@@ -37,9 +38,14 @@ function isLoginNavigation(value) {
 }
 
 function openLogin(input) {
-  let url = `${ORIGIN}/page/login`;
-  if (input?.trim()) url = courseUrl(input);
-  if (loginWindow && !loginWindow.isDestroyed()) { loginWindow.show(); loginWindow.focus(); return { ok: true }; }
+  let url = STUDY_URL;
+  if (input?.trim()) url = loginUrl(input);
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    if (loginWindow.webContents.getURL() !== url && !loginWindow.webContents.getURL().includes('/page/login')) {
+      loginWindow.loadURL(url).catch(() => status({ type: 'log', message: '千聊页面加载失败，请在登录窗口刷新或检查网络。' }));
+    }
+    loginWindow.show(); loginWindow.focus(); return { ok: true };
+  }
   loginWindow = new BrowserWindow({ width: 1040, height: 800, minWidth: 760, minHeight: 620, title: '千聊登录 · 登录后回到下载器读取课程',
     autoHideMenuBar: true, icon: path.join(__dirname, '../assets/app.ico'),
     webPreferences: { partition: 'persist:qlchat-v1', contextIsolation: true, sandbox: true, nodeIntegration: false, webSecurity: true } });
@@ -76,6 +82,41 @@ async function saveCourseLibrary() {
   await atomicWriteFile(file, JSON.stringify(courseLibrary));
 }
 
+async function loadStudyCourses() {
+  try {
+    const saved = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'study-courses.json'), 'utf8'));
+    if (!Array.isArray(saved.courses) || typeof saved.syncedAt !== 'string') return;
+    const courses = saved.courses.filter(item => {
+      try {
+        if (!item || typeof item.title !== 'string' || !/^\d{5,24}$/.test(String(item.id))) return false;
+        if (item.kind === 'unsupported' && item.supported === false && item.url === null) return true;
+        return ['channel', 'topic'].includes(item.kind) && courseUrl(item.url) === item.url;
+      } catch { return false; }
+    });
+    studyCourses = courses;
+    studySyncedAt = saved.syncedAt;
+  } catch { /* first sync or invalid prior cache */ }
+}
+
+async function syncStudyCourses(url) {
+  if (manager.busy || parsing) return { ok: false, error: '请等待当前操作完成。' };
+  parsing = true;
+  try {
+    const result = await client.getStudyCourses(url || STUDY_URL);
+    if (!result || result.complete !== true || !Array.isArray(result.courses)) throw new QlchatError('课程列表尚未读取完整，请重新同步。');
+    const syncedAt = new Date().toISOString();
+    studyCourses = result.courses;
+    studySyncedAt = syncedAt;
+    await atomicWriteFile(path.join(app.getPath('userData'), 'study-courses.json'), JSON.stringify({ courses: studyCourses, syncedAt })).catch(error => status({ type: 'log', message: error.message }));
+    status({ type: 'study', courses: studyCourses, syncedAt });
+    return { ok: true, courses: studyCourses, syncedAt, complete: true };
+  } catch (error) {
+    const message = error.code === 'QLCHAT_CLIENT' ? error.message : '同步我的课程失败，请检查登录状态和网络后重试。';
+    if (/登录/.test(message)) { try { openLogin(STUDY_URL); } catch { /* displayed error already explains sign-in */ } }
+    return { ok: false, error: message };
+  } finally { parsing = false; }
+}
+
 async function rememberCourse(url, value) {
   const entry = { url, title: value.title, channelId: value.channelId, tasks: value.tasks, taskCount: value.tasks.length, lastReadAt: new Date().toISOString() };
   courseLibrary = [entry, ...courseLibrary.filter(item => item.url !== url)].slice(0, 100);
@@ -102,6 +143,7 @@ async function stopAndExit() {
 async function createMainWindow() {
   outputDir = path.join(app.getPath('downloads'), '千聊课程');
   courseLibrary = await loadCourseLibrary();
+  await loadStudyCourses();
   try {
     const prefs = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'preferences.json'), 'utf8'));
     if (typeof prefs.outputDir === 'string' && path.isAbsolute(prefs.outputDir)) outputDir = prefs.outputDir;
@@ -119,7 +161,8 @@ async function createMainWindow() {
   manager.on('progress', payload => status({ type: 'progress', ...payload }));
   manager.on('log', message => status({ type: 'log', message }));
 
-  handle('get-initial-state', () => ({ outputDir, version: app.getVersion(), courses: courseLibrary, license: license.state }));
+  handle('get-initial-state', () => ({ outputDir, version: app.getVersion(), courses: courseLibrary, license: license.state, studyCourses, studySyncedAt }));
+  handle('sync-study-courses', ({ url } = {}) => syncStudyCourses(url));
   handle('get-license-state', () => license.authorize());
   handle('activate-license', async ({ order } = {}) => {
     try {
