@@ -292,6 +292,9 @@ class QlchatClient {
     try { payload = await response.json(); } catch { throw new QlchatError('课程接口没有返回数据，请重新登录千聊。'); }
     if (Number(payload.state?.code) !== 0) {
       const code = payload.state?.code;
+      if (Number(code) === 10001 && payload.state?.msg === '没有媒体文件') {
+        throw new QlchatError('千聊返回“没有媒体文件”，这节课当前没有可下载的媒体。', 'MEDIA_UNAVAILABLE');
+      }
       throw new QlchatError(`课程访问未通过（${String(code ?? '未知').replace(/[^\d-]/g, '').slice(0, 10) || '未知'}），请确认已登录且账号拥有该课程的播放权限。`);
     }
     return payload.data;

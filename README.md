@@ -1,10 +1,12 @@
 # 千聊下载器
 
-独立 Windows 桌面程序，将账号可正常播放的千聊视频课程保存为本地 MP4。支持内置浏览器登录、订单授权、同步“我的课程”和“最近学习”、保存本机课程库、按章节选择课程和批量下载。
+独立 Windows 桌面程序，将账号可正常访问的千聊课程保存到本机。支持视频 MP4、音频 M4A、图文 HTML、内置浏览器登录、订单授权、课程分类和批量下载。
 
-项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.4.0](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.4.0)。
+项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.4.1](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.4.1)。
 
-直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.4.0/QlchatDownloader-0.4.0-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.4.0/QlchatDownloader-0.4.0-x64-Portable.exe)
+直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.4.1/QlchatDownloader-0.4.1-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.4.1/QlchatDownloader-0.4.1-x64-Portable.exe)
+
+0.4.1 修复自动同步后的章节折叠状态，并按视频、音频、图文分别显示数量。手机号登录的临时会话通过系统加密保存在本机，重启可恢复；缓存最长保留 7 天，服务端仍可使会话提前失效。千聊返回“没有媒体文件”时明确说明原因。
 
 ## 0.4.0 自动整理全部学习内容
 
@@ -28,9 +30,9 @@
 
 ## 安装使用
 
-1. 运行 `QlchatDownloader-0.3.0-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.3.0-x64-Portable.exe`。
+1. 运行 `QlchatDownloader-0.4.1-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.4.1-x64-Portable.exe`。
 2. 打开登录窗口，用购课账号完成登录。下载器和外部网页使用各自的登录会话。
-3. 点击“同步学习列表”，从“我的课程”或“最近学习”中选择课程并读取目录；也可直接粘贴单节或整套课程链接。目录读取后默认全选视频课，点击“下载全部视频课程”会按章节逐节保存；网络或签名地址短暂失败时会自动刷新并重试。音频和图文课会在目录中提示暂不支持。
+3. 登录后等待自动整理课程，默认全选已识别的课时。也可点击“同步学习列表”后“读取全部课时”重新整理，或直接粘贴单节/整套课程链接。点击“下载全部课程内容”开始保存；网络或签名地址短暂失败时会自动刷新并重试。
 4. 输入闲鱼订单号完成本机授权（订单号本身就是兑换码，不需要另填兑换码），选择保存文件夹，开始下载。可查看进度、取消任务和打开保存位置。
 
 账号登录状态只保存在本机，此程序使用独立的应用数据目录，与钉钉及小鹅通下载器分开。学习列表按当前登录账号从平台同步，本机课程库记录已读取过目录的课程。切换账号或购买新课程后请重新同步；平台学习数据可能延迟更新。无需将 Cookie、验证码或密码发送给其他人。
@@ -47,6 +49,7 @@
 
 - 千聊普通视频课程的正常授权播放地址，输出 MP4。
 - 仅处理当前账号有权访问的课程；未购课、失效课程、直播中内容或特殊播放器可能无法下载。
+- 课时列在目录中并不保证千聊仍保留媒体文件；平台返回“没有媒体文件”的课时会明确失败，其他课时继续处理。
 - 不支持 Widevine 等 DRM 课程。平台更新可能需要更新解析逻辑。
 - 内置浏览器可能无法播放部分视频，下载结果以下载完成后的文件检查为准。
 

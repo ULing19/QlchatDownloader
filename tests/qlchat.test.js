@@ -121,6 +121,11 @@ test('API failure messages do not expose server diagnostics or signed URLs', asy
   await assert.rejects(client.resolveMedia({ id: '10000' }), error => !error.message.includes('SECRET') && /权限/.test(error.message));
 });
 
+test('missing media response explains the unavailable lesson without asking for another login', async () => {
+  const client = new QlchatClient({ fetchImpl: async () => response({ state: { code: 10001, msg: '没有媒体文件' }, data: null }) });
+  await assert.rejects(client.resolveMedia({ id: '10000' }), error => error.reasonCode === 'MEDIA_UNAVAILABLE' && /没有媒体文件/.test(error.message) && !/登录/.test(error.message));
+});
+
 test('client creates identifiable safe errors while sanitizing unrelated network exceptions', async () => {
   assert.throws(() => courseUrl('invalid'), error => error instanceof QlchatError && error.code === 'QLCHAT_CLIENT' && error.name === 'QlchatError');
   assert.throws(() => decodePlayUrl('invalid-envelope'), error => error instanceof QlchatError && error.code === 'QLCHAT_CLIENT');
@@ -207,6 +212,7 @@ test('desktop blocks unlicensed downloads and waits for cleanup before closing',
       if (name === './core/qlchat') return { QlchatClient: Client, courseUrl: input => input, loginUrl: input => input, STUDY_URL: 'https://h5.qlchat.com/wechat/page/mine/study', ORIGIN: 'https://h5.qlchat.com', USER_AGENT: 'test' };
       if (name === './core/license') return { QlchatLicense: License };
       if (name === './core/storage') return { atomicWriteFile: async () => {} };
+      if (name === './core/login-session') return require('../src/core/login-session');
       return require(name);
     },
   };

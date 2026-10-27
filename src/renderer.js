@@ -109,6 +109,8 @@
     const allSelected = tasks.length > 0 && state.selected.size === tasks.length;
     const hasNonVideo = tasks.some(task => task.mediaKind && task.mediaKind !== 'video');
     $('download-button-label').textContent = state.running ? '正在保存课程…' : allSelected ? hasNonVideo ? '下载全部课程内容' : '下载全部视频课程' : '下载所选课程';
+    $('catalog-download-button').disabled = $('download-button').disabled;
+    $('catalog-download-button').textContent = $('download-button-label').textContent;
     $('cancel-button').hidden = !state.running;
     $('cancel-button').disabled = state.stopping;
     $('cancel-button').textContent = state.stopping ? '正在停止…' : '停止下载';
@@ -313,6 +315,7 @@
     const tasks = course.tasks.filter((task) => task && task.id != null).map((task, index) => ({ ...task, id: String(task.id), index: task.index || index + 1 })).filter((task) => { if (seen.has(task.id)) return false; seen.add(task.id); return true; });
     state.course = { ...course, tasks };
     state.view = 'course';
+    state.collapsed = false;
     $('study-courses').hidden = true;
     state.selected = new Set(tasks.map((task) => task.id));
     state.taskStates.clear();
@@ -324,10 +327,11 @@
     $('course-title').textContent = course.title || '千聊课程';
     const skipped = Number(course.skippedTopicCount) || 0;
     const failedCourses = Array.isArray(course.failedCourses) ? course.failedCourses.length : 0;
+    const mediaCounts = { video: 0, audio: 0, document: 0 };
+    for (const task of tasks) mediaCounts[['video', 'audio', 'document'].includes(task.mediaKind) ? task.mediaKind : 'video']++;
+    const mediaSummary = [`视频 ${mediaCounts.video}`, `音频 ${mediaCounts.audio}`, `图文 ${mediaCounts.document}`].join(' · ');
     $('course-subtitle').textContent = tasks.length
-      ? skipped ? `已读取 ${tasks.length} 节视频课；另有 ${skipped} 节音频或图文内容暂不支持下载。可按章节勾选，也可一次保存全部视频课。`
-        : failedCourses ? `已整理 ${tasks.length} 个课时；${failedCourses} 个专栏读取失败，请重新同步后再试。`
-        : '目录已完整读取，默认全选全部课程内容；也可按课程分类调整勾选。'
+      ? `${mediaSummary}。默认全选已整理课时，可按课程分类调整。${skipped ? `另有 ${skipped} 项特殊课程暂不支持。` : ''}${failedCourses ? `${failedCourses} 个专栏读取失败，请重新同步。` : ''}`
       : '暂未读取到可下载课时，请确认课程已发布并重新读取。';
     $('course-count').textContent = `${tasks.length} 节课程`;
     $('course-count').hidden = !tasks.length;
@@ -546,6 +550,7 @@
       updateBatchSummary();
     }
   });
+  $('catalog-download-button').addEventListener('click', () => $('download-button').click());
   $('cancel-button').addEventListener('click', async () => {
     if (!state.running || state.stopping) return;
     state.stopping = true;
@@ -566,7 +571,11 @@
     else if (event.type === 'license') renderLicense(event);
     else if (event.type === 'library') renderLibrary(event.courses);
     else if (event.type === 'study' && !state.running) setStudyCourses(event.courses, event.syncedAt);
-    else if (event.type === 'course' && !state.running) setCourse(event.course);
+    else if (event.type === 'course' && !state.running) {
+      setCourse(event.course);
+      const failed = event.course?.failedCourses?.length || 0;
+      setSourceStatus(`已整理 ${state.course?.tasks?.length || 0} 个课时并默认全选${failed ? `，${failed} 个专栏需重试` : '，可开始下载'}。`, failed ? 'error' : 'success');
+    }
     else if (event.type === 'progress') updateTask(event);
     else if (event.type === 'batch') {
       state.running = Boolean(event.running);

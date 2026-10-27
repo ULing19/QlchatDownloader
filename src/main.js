@@ -7,6 +7,7 @@ const { QlchatClient, courseUrl, loginUrl, STUDY_URL, QlchatError, ORIGIN, USER_
 const { DownloadManager } = require('./core/download');
 const { QlchatLicense } = require('./core/license');
 const { atomicWriteFile } = require('./core/storage');
+const { LoginSessionStore } = require('./core/login-session');
 
 app.setName('千聊下载器');
 app.commandLine.appendSwitch('force-renderer-accessibility');
@@ -14,7 +15,7 @@ app.setPath('userData', path.join(app.getPath('appData'), 'QlchatDownloader'));
 const singleInstance = app.requestSingleInstanceLock();
 if (!singleInstance) app.quit();
 
-let mainWindow, loginWindow, client, manager, qlSession, license;
+let mainWindow, loginWindow, client, manager, qlSession, license, loginSessionStore;
 let outputDir, course = null, parsing = false;
 let lastAutoStudySyncAt = 0;
 let activeBatchPromise = null, exitPending = false, exitAllowed = false;
@@ -25,6 +26,13 @@ let studyCourses = [], studySyncedAt = null;
 
 function status(payload) {
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('qlchat:status', payload);
+}
+
+async function saveLoginSession() {
+  try {
+    if (loginSessionStore && !(await loginSessionStore.save())) status({ type: 'log', message: '系统加密存储不可用，当前登录仅在本次运行中保留。' });
+  }
+  catch (error) { status({ type: 'log', message: error.message }); }
 }
 
 function trusted(event) {
@@ -71,7 +79,7 @@ function openLogin(input) {
       }
     }
   });
-  loginWindow.on('closed', () => { loginWindow = null; });
+  loginWindow.on('closed', () => { loginWindow = null; if (!exitAllowed && !exitPending) void saveLoginSession(); });
   loginWindow.loadURL(url).catch(() => status({ type: 'log', message: '千聊页面加载失败，请在登录窗口刷新或检查网络。' }));
   return { ok: true };
 }
@@ -115,6 +123,7 @@ async function syncStudyCourses(url) {
   try {
     const result = await client.getStudyCourses(url || STUDY_URL);
     if (!result || result.complete !== true || !Array.isArray(result.courses)) throw new QlchatError('课程列表尚未读取完整，请重新同步。');
+    await saveLoginSession();
     const syncedAt = new Date().toISOString();
     studyCourses = result.courses;
     studySyncedAt = syncedAt;
@@ -141,6 +150,7 @@ async function syncAllStudyCourses() {
   try {
     const list = await client.getStudyCourses(STUDY_URL);
     if (!list?.complete || !Array.isArray(list.courses)) throw new QlchatError('课程列表尚未读取完整，请重新同步。');
+    await saveLoginSession();
     const tasks = [], seen = new Set(), failedCourses = [];
     const purchased = list.courses.filter(item => item.supported !== false && item.kind === 'channel' && (item.source === 'purchased' || item.source === 'both' || item.sources?.includes('purchased')));
     for (const item of purchased) {
@@ -198,6 +208,7 @@ async function stopAndExit() {
   // FFmpeg must exit and the engine must finish deleting its partial file
   // before Electron's event loop and filesystem handles are shut down.
   if (activeBatchPromise) await activeBatchPromise.catch(() => {});
+  await saveLoginSession();
   exitAllowed = true;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
   else app.quit();
@@ -214,6 +225,8 @@ async function createMainWindow() {
   allowedOutputDirs.add(path.resolve(outputDir));
   qlSession = session.fromPartition('persist:qlchat-v1');
   qlSession.setUserAgent(USER_AGENT);
+  loginSessionStore = new LoginSessionStore({ storageDir: app.getPath('userData'), safeStorage: require('electron').safeStorage, session: qlSession });
+  await loginSessionStore.restore();
   client = new QlchatClient({ fetchImpl: (url, options) => qlSession.fetch(url, options), onLog: message => status({ type: 'log', message }) });
   license = new QlchatLicense({ storageDir: app.getPath('userData'), safeStorage: require('electron').safeStorage });
   manager = new DownloadManager({ ffmpegPath: app.isPackaged ? path.join(process.resourcesPath, 'ffmpeg.exe') : path.join(__dirname, '../assets/ffmpeg.exe'), resolveMedia: (task, options) => client.resolveMedia(task, options), fetchManifest: async (url, { signal } = {}) => {
@@ -258,6 +271,7 @@ async function createMainWindow() {
     parsing = true;
     try {
       const parsed = await client.getCourse(url);
+      await saveLoginSession();
       course = parsed;
       const canonical = courseUrl(url);
       await rememberCourse(canonical, parsed);
@@ -309,6 +323,9 @@ async function createMainWindow() {
       const choice = dialog.showMessageBoxSync(mainWindow, { type: 'question', buttons: ['继续下载', '停止并退出'], defaultId: 0, cancelId: 0, title: '正在下载课程', message: '退出会停止当前下载，已完成的视频会保留。' });
       if (choice === 0) return;
       void stopAndExit();
+    } else {
+      event.preventDefault();
+      void stopAndExit();
     }
   });
   mainWindow.on('closed', () => { mainWindow = null; if (loginWindow && !loginWindow.isDestroyed()) loginWindow.close(); app.quit(); });
@@ -322,7 +339,7 @@ app.whenReady().then(() => { if (singleInstance) return createMainWindow(); }).c
   dialog.showErrorBox('千聊下载器启动失败', '程序资源不完整，请重新安装千聊下载器。'); app.quit();
 });
 app.on('before-quit', event => {
-  if (exitAllowed || (!manager?.busy && !activeBatchPromise)) return;
+  if (exitAllowed) return;
   event.preventDefault();
   if (exitPending) return;
   if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
