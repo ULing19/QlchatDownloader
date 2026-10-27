@@ -2,9 +2,13 @@
 
 独立 Windows 桌面程序，将账号可正常播放的千聊视频课程保存为本地 MP4。支持内置浏览器登录、订单授权、同步“我的课程”和“最近学习”、保存本机课程库、按章节选择课程和批量下载。
 
-项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.3.0](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.3.0)。
+项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.3.1](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.3.1)。
 
-直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.0/QlchatDownloader-0.3.0-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.0/QlchatDownloader-0.3.0-x64-Portable.exe)
+直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.1/QlchatDownloader-0.3.1-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.1/QlchatDownloader-0.3.1-x64-Portable.exe)
+
+## 0.3.1 批量下载修复
+
+修复目录中标为 `normal`、`ppt` 的视频课被静默漏掉的问题。目录读取后会默认全选所有可下载视频课，并显示音频或图文课的暂不支持数量。每节课下载失败时会刷新播放地址并自动重试，完成后才进入下一节。
 
 ## 0.3.0 我的学习
 
@@ -20,7 +24,7 @@
 
 1. 运行 `QlchatDownloader-0.3.0-x64-Setup.exe`，选择安装位置；也可直接运行 `QlchatDownloader-0.3.0-x64-Portable.exe`。
 2. 打开登录窗口，用购课账号完成登录。下载器和外部网页使用各自的登录会话。
-3. 点击“同步学习列表”，从“我的课程”或“最近学习”中选择课程并读取目录；也可直接粘贴单节或整套课程链接。勾选要下载的章节或单节课程。
+3. 点击“同步学习列表”，从“我的课程”或“最近学习”中选择课程并读取目录；也可直接粘贴单节或整套课程链接。目录读取后默认全选视频课，点击“下载全部视频课程”会按章节逐节保存；网络或签名地址短暂失败时会自动刷新并重试。音频和图文课会在目录中提示暂不支持。
 4. 输入闲鱼订单号完成本机授权（订单号本身就是兑换码，不需要另填兑换码），选择保存文件夹，开始下载。可查看进度、取消任务和打开保存位置。
 
 账号登录状态只保存在本机，此程序使用独立的应用数据目录，与钉钉及小鹅通下载器分开。学习列表按当前登录账号从平台同步，本机课程库记录已读取过目录的课程。切换账号或购买新课程后请重新同步；平台学习数据可能延迟更新。无需将 Cookie、验证码或密码发送给其他人。

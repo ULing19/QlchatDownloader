@@ -105,7 +105,8 @@
     $('choose-output-button').disabled = state.running;
     $('open-output-button').disabled = !state.outputDir;
     $('download-button').disabled = locked || state.view === 'study' || !state.authorized || !state.selected.size || !state.outputDir;
-    $('download-button-label').textContent = state.running ? '正在保存课程…' : '下载所选课程';
+    const allSelected = tasks.length > 0 && state.selected.size === tasks.length;
+    $('download-button-label').textContent = state.running ? '正在保存课程…' : allSelected ? '下载全部视频课程' : '下载所选课程';
     $('cancel-button').hidden = !state.running;
     $('cancel-button').disabled = state.stopping;
     $('cancel-button').textContent = state.stopping ? '正在停止…' : '停止下载';
@@ -300,7 +301,11 @@
     state.batchFinished = false;
     $('batch-summary').hidden = true;
     $('course-title').textContent = course.title || '千聊课程';
-    $('course-subtitle').textContent = tasks.length ? '按章节勾选课时，保存你需要的学习内容。' : '暂未读取到可下载课时，请确认课程已发布并重新读取。';
+    const skipped = Number(course.skippedTopicCount) || 0;
+    $('course-subtitle').textContent = tasks.length
+      ? skipped ? `已读取 ${tasks.length} 节视频课；另有 ${skipped} 节音频或图文内容暂不支持下载。可按章节勾选，也可一次保存全部视频课。`
+        : '目录已完整读取，默认全选全部视频课；也可按章节勾选后保存。'
+      : '暂未读取到可下载课时，请确认课程已发布并重新读取。';
     $('course-count').textContent = `${tasks.length} 节课程`;
     $('course-count').hidden = !tasks.length;
     $('catalog-toolbar').hidden = !tasks.length;

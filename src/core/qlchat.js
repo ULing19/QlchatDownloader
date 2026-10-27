@@ -93,7 +93,12 @@ function findCourseMetadata(state) {
 function buildTasks(rows) {
   const chapters = new Map(rows.filter(r => r.businessType === 'chapter').map(r => [String(r.businessId), cleanTitle(r.businessName, '课程章节')]));
   const seen = new Set();
-  return rows.filter(r => r.businessType === 'topic' && r.topicPo?.style !== 'audio' && (!r.topicPo?.style || ['videoGraphic', 'video', 'liveVideo', 'simpleVideo'].includes(r.topicPo.style)))
+  // QLChat uses `normal` and `ppt` for video/live lessons as well as the
+  // newer videoGraphic/video styles. Only the known audio-only styles are
+  // omitted; an unknown style is retained and resolved through the media API
+  // instead of silently disappearing from an "all lessons" batch.
+  const audioStyles = new Set(['audio', 'audiographic', 'audiolive']);
+  return rows.filter(r => r.businessType === 'topic' && !audioStyles.has(String(r.topicPo?.style || '').toLowerCase()))
     .filter(r => /^\d+$/.test(String(r.businessId)) && !seen.has(String(r.businessId)) && seen.add(String(r.businessId)))
     .map((r, index) => ({ id: String(r.businessId), title: cleanTitle(r.businessName || r.topicPo?.topic, `第 ${index + 1} 节`), chapter: chapters.get(String(r.chapterId)) || '课程视频', index: index + 1, duration: Number(r.topicPo?.duration) || undefined }));
 }
@@ -327,6 +332,7 @@ class QlchatClient {
     if (meta.isLogin === false) throw new QlchatError('请先在登录窗口扫码登录，再点击读取课程。');
     meta.channelId ||= new URL(url).searchParams.get('channelId') || '';
     let tasks = [];
+    let catalogTopicCount = 0;
     if (meta.channelId && meta.liveId) {
       const rows = [], seenRows = new Set();
       let ended = false;
@@ -343,12 +349,16 @@ class QlchatClient {
         if (list.length < 20) { ended = true; break; }
       }
       if (!ended) throw new QlchatError('课程目录过大或分页异常，请使用单节课程链接。');
+      catalogTopicCount = rows.filter(r => r.businessType === 'topic').length;
       tasks = buildTasks(rows);
     }
-    if (!tasks.length && meta.topic.id) tasks = [{ id: String(meta.topic.id), title: cleanTitle(meta.topic.topic, '课程视频'), chapter: '课程视频', index: 1, duration: Number(meta.topic.duration) || undefined }];
+    if (!tasks.length && meta.topic.id) {
+      catalogTopicCount = 1;
+      tasks = [{ id: String(meta.topic.id), title: cleanTitle(meta.topic.topic, '课程视频'), chapter: '课程视频', index: 1, duration: Number(meta.topic.duration) || undefined }];
+    }
     if (!tasks.length) throw new QlchatError('没有找到视频课程，请尝试打开任意一节后复制该视频链接。');
     this.meta = meta;
-    return { title: meta.title, channelId: meta.channelId, tasks };
+    return { title: meta.title, channelId: meta.channelId, tasks, catalogTopicCount, skippedTopicCount: Math.max(0, catalogTopicCount - tasks.length) };
   }
 
   async resolveMedia(task, options = {}) {

@@ -43,6 +43,15 @@ test('assemble chapters across pages, ignore nonvideo materials and duplicate ID
   assert.deepEqual(tasks, [{ id: '60000', title: '1.1 函数', chapter: '第一章 函数', index: 1, duration: 2566 }]);
 });
 
+test('keeps QLChat normal and ppt video lessons in the all-lessons catalog', () => {
+  const rows = [
+    { businessType: 'topic', businessId: '61000', businessName: '普通视频课', topicPo: { style: 'normal' } },
+    { businessType: 'topic', businessId: '61001', businessName: 'PPT 视频课', topicPo: { style: 'ppt' } },
+    { businessType: 'topic', businessId: '61002', businessName: '音频课', topicPo: { style: 'audioGraphic' } },
+  ];
+  assert.deepEqual(buildTasks(rows).map(task => task.id), ['61000', '61001']);
+});
+
 test('decode official URL envelope while rejecting unsupported protocols and formats', () => {
   const url = 'https://1378190640.vod-qcloud.com/test/video.m3u8?t=one-use';
   const encoder = crypto.createCipheriv('aes-256-cbc', Buffer.from('711AAB17E204816B783374025FD08DE8'), Buffer.from('0102030405060708'));

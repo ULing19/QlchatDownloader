@@ -9,7 +9,7 @@ const { EventEmitter } = require('node:events');
 const { PassThrough } = require('node:stream');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
-const { DownloadManager, safeName, inspectManifest, parseProgressLine } = require('../src/core/download');
+const { DownloadManager, DownloadError, safeName, inspectManifest, parseProgressLine } = require('../src/core/download');
 const { QlchatError } = require('../src/core/qlchat');
 
 const URL = 'https://video.example.test/video.m3u8?token=PRIVATE_SIGNED_VALUE';
@@ -93,7 +93,7 @@ test('HLS metadata rejects protected media and parses ordinary duration', () => 
 test('complete download verifies full video then publishes once without partial files', async t => {
   const outputDir = await sandbox(t);
   const fixture = spawnFixture();
-  const manager = engine(fixture);
+  const manager = engine(fixture, { maxAttempts: 1 });
   const progress = [];
   manager.on('progress', event => progress.push(event));
   const result = await manager.start({ tasks: [{ id: 'first', title: '函数概念', chapter: '第一章', index: 1 }], outputDir, courseTitle: '高等数学' });
@@ -151,7 +151,7 @@ test('course, chapter, and titles cannot escape the selected output root', async
 test('failed FFmpeg output never becomes completed and private URLs never reach logs', async t => {
   const outputDir = await sandbox(t);
   const fixture = spawnFixture({ downloadCode: 1 });
-  const manager = engine(fixture);
+  const manager = engine(fixture, { maxAttempts: 1 });
   const events = [];
   manager.on('progress', event => events.push(event));
   manager.on('log', message => events.push(message));
@@ -211,6 +211,24 @@ test('one resolver failure does not stop following tasks or expose private excep
   assert.equal(result.failed, 1);
   assert.equal(result.completed, 1);
   assert(!JSON.stringify(result).includes('PRIVATE'));
+});
+
+test('refreshes a transient signed URL and retries a lesson within one batch', async t => {
+  const outputDir = await sandbox(t);
+  const fixture = spawnFixture();
+  let attempts = 0;
+  const manager = engine(fixture, {
+    maxAttempts: 3,
+    resolveMedia: async () => {
+      attempts++;
+      if (attempts < 3) throw new DownloadError('RESOLVE_FAILED', '视频地址暂时失效，请重试。');
+      return { url: URL, duration: 100 };
+    },
+  });
+  const result = await manager.start({ tasks: [{ id: 'retry', title: '需要重试' }], outputDir });
+  assert.equal(attempts, 3);
+  assert.equal(result.completed, 1);
+  assert.equal(result.failed, 0);
 });
 
 test('safe QlchatError details reach the task while ordinary errors remain private', async t => {

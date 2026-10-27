@@ -13,6 +13,10 @@ const REQUEST_HEADERS = Object.freeze({
   Referer: 'https://h5.qlchat.com/',
 });
 const MAX_MANIFEST_BYTES = 4 * 1024 * 1024;
+const RETRYABLE_CODES = new Set([
+  'RESOLVE_FAILED', 'MANIFEST_NETWORK', 'MANIFEST_HTTP', 'MANIFEST_REDIRECT',
+  'FFMPEG_START', 'FFMPEG_FAILED', 'VERIFY_FAILED', 'INCOMPLETE_FILE', 'INVALID_FILE',
+]);
 
 class DownloadError extends Error {
   constructor(code, message) {
@@ -121,7 +125,7 @@ function parseProgressLine(line) {
 }
 
 class DownloadManager extends EventEmitter {
-  constructor({ ffmpegPath, resolveMedia, fetchManifest = fetchText, spawnProcess = spawn, verifyMedia, resumeExisting = true } = {}) {
+  constructor({ ffmpegPath, resolveMedia, fetchManifest = fetchText, spawnProcess = spawn, verifyMedia, resumeExisting = true, maxAttempts = 3 } = {}) {
     super();
     if (!ffmpegPath || typeof resolveMedia !== 'function') throw new TypeError('ffmpegPath and resolveMedia are required');
     this.ffmpegPath = ffmpegPath;
@@ -130,6 +134,7 @@ class DownloadManager extends EventEmitter {
     this.spawnProcess = spawnProcess;
     this.verifyMedia = verifyMedia;
     this.resumeExisting = resumeExisting;
+    this.maxAttempts = Math.max(1, Math.min(5, Math.floor(Number(maxAttempts) || 3)));
     this._busy = false;
     this._cancelled = false;
     this._child = null;
@@ -175,7 +180,7 @@ class DownloadManager extends EventEmitter {
           continue;
         }
         try {
-          const file = await this._download(task, courseDir);
+          const file = await this._downloadWithRetry(task, courseDir);
           result.completed++;
           result.results.push({ taskId: task.id, status: 'completed', path: file });
         } catch (error) {
@@ -204,6 +209,22 @@ class DownloadManager extends EventEmitter {
     if (error?.code === 'ENOSPC') return '磁盘空间不足，请更换保存文件夹。';
     if (['EACCES', 'EPERM'].includes(error?.code)) return '没有写入保存文件夹的权限，请更换位置。';
     return '下载失败，请确认登录状态、课程播放权限和网络后重试。';
+  }
+
+  async _downloadWithRetry(task, courseDir) {
+    const attempts = Math.max(1, Math.floor(Number(this.maxAttempts) || 1));
+    let lastError;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      this._checkCancelled();
+      try {
+        return await this._download(task, courseDir);
+      } catch (error) {
+        lastError = error;
+        if (this._cancelled || !(error instanceof DownloadError) || !RETRYABLE_CODES.has(error.code) || attempt >= attempts) throw error;
+        this.emit('log', `一节课程暂时失败，正在刷新播放地址重试（${attempt + 1}/${attempts}）。`);
+      }
+    }
+    throw lastError;
   }
 
   async _download(task, courseDir) {
