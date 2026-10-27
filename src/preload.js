@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('qlchat', Object.freeze({
   openLogin: ({ url } = {}) => ipcRenderer.invoke('qlchat:open-login', { url }),
   parseCourse: ({ url } = {}) => ipcRenderer.invoke('qlchat:parse-course', { url }),
   syncStudyCourses: ({ url } = {}) => ipcRenderer.invoke('qlchat:sync-study-courses', { url }),
+  syncAllStudyCourses: () => ipcRenderer.invoke('qlchat:sync-all-study-courses'),
   startDownload: ({ tasks, outputDir, courseTitle } = {}) => ipcRenderer.invoke('qlchat:start-download', { tasks, outputDir, courseTitle }),
   cancelDownload: () => ipcRenderer.invoke('qlchat:cancel-download'),
   openOutput: ({ path } = {}) => ipcRenderer.invoke('qlchat:open-output', { path }),

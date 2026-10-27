@@ -16,6 +16,7 @@ if (!singleInstance) app.quit();
 
 let mainWindow, loginWindow, client, manager, qlSession, license;
 let outputDir, course = null, parsing = false;
+let lastAutoStudySyncAt = 0;
 let activeBatchPromise = null, exitPending = false, exitAllowed = false;
 const allowedOutputDirs = new Set();
 const tasksById = new Map();
@@ -59,6 +60,16 @@ function openLogin(input) {
     status({ type: 'log', message: '登录窗口已打开。完成登录后，回到下载器点击“读取课程”。' });
     // Use the site's own visible login control; credentials remain in its page.
     if (loginWindow.webContents.getURL().includes('/page/login')) loginWindow.webContents.executeJavaScript(`(() => { const items = [...document.querySelectorAll('li')]; const scan = items.find(el => el.textContent.trim() === '扫码登录'); if (scan) scan.click(); })()`).catch(() => {});
+    const current = loginWindow.webContents.getURL();
+    if (/https:\/\/h5\.qlchat\.com\/wechat\/page\//i.test(current)) {
+      const now = Date.now();
+      if (now - lastAutoStudySyncAt > 10000 && !parsing && !manager?.busy) {
+        lastAutoStudySyncAt = now;
+        void syncAllStudyCourses().then(result => {
+          if (result?.ok) status({ type: 'log', message: `登录成功，已自动整理 ${result.course?.tasks?.length || 0} 个可处理课时，默认全选。` });
+        });
+      }
+    }
   });
   loginWindow.on('closed', () => { loginWindow = null; });
   loginWindow.loadURL(url).catch(() => status({ type: 'log', message: '千聊页面加载失败，请在登录窗口刷新或检查网络。' }));
@@ -117,6 +128,58 @@ async function syncStudyCourses(url) {
   } finally { parsing = false; }
 }
 
+function studyMediaKind(course) {
+  const value = `${course?.mediaKind || ''} ${course?.courseType || ''} ${course?.topicType || ''}`.toLowerCase();
+  if (/audio/.test(value)) return 'audio';
+  if (/article|graphic|doc|text/.test(value)) return 'document';
+  return 'video';
+}
+
+async function syncAllStudyCourses() {
+  if (manager.busy || parsing) return { ok: false, error: '请等待当前操作完成。' };
+  parsing = true;
+  try {
+    const list = await client.getStudyCourses(STUDY_URL);
+    if (!list?.complete || !Array.isArray(list.courses)) throw new QlchatError('课程列表尚未读取完整，请重新同步。');
+    const tasks = [], seen = new Set(), failedCourses = [];
+    const purchased = list.courses.filter(item => item.supported !== false && item.kind === 'channel' && (item.source === 'purchased' || item.source === 'both' || item.sources?.includes('purchased')));
+    for (const item of purchased) {
+      try {
+        const catalog = await client.getCourse(item.url);
+        for (const task of catalog.tasks || []) {
+          const id = String(task.id);
+          if (seen.has(id)) continue;
+          seen.add(id);
+          tasks.push({ ...task, id, mediaKind: task.mediaKind || studyMediaKind(task), title: `${item.title} / ${task.title}`, chapter: `${item.title} / ${task.chapter || '课程内容'}` });
+        }
+      } catch (error) {
+        failedCourses.push({ title: item.title, error: error.message });
+      }
+    }
+    for (const item of list.courses.filter(item => item.supported !== false && item.kind === 'topic')) {
+      const id = String(item.id);
+      if (seen.has(id)) continue;
+      seen.add(id);
+      tasks.push({ id, title: item.title, chapter: '最近学习', index: tasks.length + 1, duration: item.duration, mediaKind: studyMediaKind(item), url: item.url });
+    }
+    if (!tasks.length) throw new QlchatError('没有找到可批量处理的课程内容。');
+    const syncedAt = new Date().toISOString();
+    studyCourses = list.courses;
+    studySyncedAt = syncedAt;
+    await atomicWriteFile(path.join(app.getPath('userData'), 'study-courses.json'), JSON.stringify({ courses: studyCourses, syncedAt })).catch(error => status({ type: 'log', message: error.message }));
+    status({ type: 'study', courses: studyCourses, syncedAt });
+    course = { title: '千聊全部学习内容', tasks, failedCourses, catalogTopicCount: tasks.length, skippedTopicCount: list.unsupportedCount || 0 };
+    tasksById.clear();
+    tasks.forEach(task => tasksById.set(String(task.id), task));
+    status({ type: 'course', course });
+    return { ok: true, course, complete: failedCourses.length === 0, failedCourses };
+  } catch (error) {
+    const message = error.code === 'QLCHAT_CLIENT' ? error.message : '同步全部学习内容失败，请检查登录状态和网络后重试。';
+    if (/登录/.test(message)) { try { openLogin(STUDY_URL); } catch { /* message already safe */ } }
+    return { ok: false, error: message };
+  } finally { parsing = false; }
+}
+
 async function rememberCourse(url, value) {
   const entry = { url, title: value.title, channelId: value.channelId, tasks: value.tasks, taskCount: value.tasks.length, lastReadAt: new Date().toISOString() };
   courseLibrary = [entry, ...courseLibrary.filter(item => item.url !== url)].slice(0, 100);
@@ -163,6 +226,7 @@ async function createMainWindow() {
 
   handle('get-initial-state', () => ({ outputDir, version: app.getVersion(), courses: courseLibrary, license: license.state, studyCourses, studySyncedAt }));
   handle('sync-study-courses', ({ url } = {}) => syncStudyCourses(url));
+  handle('sync-all-study-courses', () => syncAllStudyCourses());
   handle('get-license-state', () => license.authorize());
   handle('activate-license', async ({ order } = {}) => {
     try {

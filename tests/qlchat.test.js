@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { courseUrl, studyUrl, loginUrl, STUDY_URL, parseInitialState, findCourseMetadata, buildTasks, decodePlayUrl, QlchatClient, QlchatError } = require('../src/core/qlchat');
+const { courseUrl, studyUrl, loginUrl, STUDY_URL, parseInitialState, findCourseMetadata, buildTasks, normalizeRecentCourse, decodePlayUrl, QlchatClient, QlchatError } = require('../src/core/qlchat');
 
 test('accept only official course links and canonicalize tracking parameters', () => {
   assert.equal(courseUrl('分享课程 https://h5.qlchat.com/wechat/page/topic-simple-video?topicId=2000000001&byhand=1'), 'https://h5.qlchat.com/wechat/page/topic-simple-video?topicId=2000000001');
@@ -40,7 +40,10 @@ test('assemble chapters across pages, ignore nonvideo materials and duplicate ID
   const chapter = { businessType: 'chapter', businessId: '50000', businessName: '第一章 函数' };
   const row = { businessType: 'topic', businessId: '60000', businessName: '1.1 函数', chapterId: '50000', topicPo: { style: 'videoGraphic', duration: '2566.0' } };
   const tasks = buildTasks([row, { businessType: 'file', businessId: '70000' }, chapter, row, { ...row, businessId: '80000', topicPo: { style: 'audio' } }]);
-  assert.deepEqual(tasks, [{ id: '60000', title: '1.1 函数', chapter: '第一章 函数', index: 1, duration: 2566 }]);
+  assert.deepEqual(tasks, [
+    { id: '60000', title: '1.1 函数', chapter: '第一章 函数', index: 1, duration: 2566, mediaKind: 'video' },
+    { id: '80000', title: '1.1 函数', chapter: '第一章 函数', index: 2, duration: undefined, mediaKind: 'audio' },
+  ]);
 });
 
 test('keeps QLChat normal and ppt video lessons in the all-lessons catalog', () => {
@@ -49,7 +52,12 @@ test('keeps QLChat normal and ppt video lessons in the all-lessons catalog', () 
     { businessType: 'topic', businessId: '61001', businessName: 'PPT 视频课', topicPo: { style: 'ppt' } },
     { businessType: 'topic', businessId: '61002', businessName: '音频课', topicPo: { style: 'audioGraphic' } },
   ];
-  assert.deepEqual(buildTasks(rows).map(task => task.id), ['61000', '61001']);
+  assert.deepEqual(buildTasks(rows).map(task => [task.id, task.mediaKind]), [['61000', 'video'], ['61001', 'video'], ['61002', 'audio']]);
+});
+
+test('classifies recent audio and article lesson types for the aggregate batch', () => {
+  assert.equal(normalizeRecentCourse({ topicId: '61003', courseType: 'topic', topicType: 'audioGraphic', skuTitle: '音频' }).mediaKind, 'audio');
+  assert.equal(normalizeRecentCourse({ topicId: '61004', courseType: 'topic', topicType: 'article', skuTitle: '图文' }).mediaKind, 'document');
 });
 
 test('decode official URL envelope while rejecting unsupported protocols and formats', () => {

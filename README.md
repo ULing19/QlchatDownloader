@@ -2,9 +2,15 @@
 
 独立 Windows 桌面程序，将账号可正常播放的千聊视频课程保存为本地 MP4。支持内置浏览器登录、订单授权、同步“我的课程”和“最近学习”、保存本机课程库、按章节选择课程和批量下载。
 
-项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.3.1](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.3.1)。
+项目仓库：[github.com/ULing19/QlchatDownloader](https://github.com/ULing19/QlchatDownloader)；当前 Release：[v0.4.0](https://github.com/ULing19/QlchatDownloader/releases/tag/v0.4.0)。
 
-直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.1/QlchatDownloader-0.3.1-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.3.1/QlchatDownloader-0.3.1-x64-Portable.exe)
+直接下载：[安装版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.4.0/QlchatDownloader-0.4.0-x64-Setup.exe) · [绿色版](https://github.com/ULing19/QlchatDownloader/releases/download/v0.4.0/QlchatDownloader-0.4.0-x64-Portable.exe)
+
+## 0.4.0 自动整理全部学习内容
+
+登录千聊后，下载器会自动读取账号的已购专栏和最近学习，展开专栏目录，按课程名称和章节分类，并默认勾选全部课时。也可以在“我的学习”页点击“读取全部课时”重新整理。
+
+视频保存为 MP4，音频保存为 M4A，图文保存为本地 HTML；课程媒体类型来自千聊目录字段。重复课时按课程 ID 合并，某个专栏暂时读取失败会显示在结果中，其他课程仍可继续批量下载。
 
 ## 0.3.1 批量下载修复
 

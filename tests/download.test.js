@@ -231,6 +231,18 @@ test('refreshes a transient signed URL and retries a lesson within one batch', a
   assert.equal(result.failed, 0);
 });
 
+test('saves graph-text lessons as escaped local HTML', async t => {
+  const outputDir = await sandbox(t);
+  const manager = engine(spawnFixture(), { resolveMedia: async () => ({ mediaKind: 'document', content: '<script>alert(1)</script><p>正文</p> https://img.qlchat.com/course/a.png' }) });
+  const result = await manager.start({ tasks: [{ id: 'doc', title: '图文课', chapter: '第一章', mediaKind: 'document' }], outputDir, courseTitle: '图文课程' });
+  assert.equal(result.completed, 1);
+  assert.match(result.results[0].path, /\.html$/);
+  const html = await fs.readFile(result.results[0].path, 'utf8');
+  assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
+  assert(!html.includes('<script>alert(1)</script>'));
+  assert.match(html, /<img src="https:\/\/img\.qlchat\.com\/course\/a\.png"/);
+});
+
 test('safe QlchatError details reach the task while ordinary errors remain private', async t => {
   const outputDir = await sandbox(t);
   const message = '千聊播放地址格式发生变化，请更新下载器后重试。';

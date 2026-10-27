@@ -98,6 +98,7 @@
     $('parse-button').firstChild.textContent = state.parsing ? '正在读取…' : '读取课程';
     if (!state.parsing && isStudyPage($('course-url').value.trim())) $('parse-button').firstChild.textContent = '同步学习列表';
     $('sync-study-button').disabled = locked;
+    $('sync-all-study-button').disabled = locked;
     $('refresh-study-button').disabled = locked;
     $('show-study-button').disabled = locked;
     $('show-study-button').hidden = !state.studyLoaded;
@@ -106,7 +107,8 @@
     $('open-output-button').disabled = !state.outputDir;
     $('download-button').disabled = locked || state.view === 'study' || !state.authorized || !state.selected.size || !state.outputDir;
     const allSelected = tasks.length > 0 && state.selected.size === tasks.length;
-    $('download-button-label').textContent = state.running ? '正在保存课程…' : allSelected ? '下载全部视频课程' : '下载所选课程';
+    const hasNonVideo = tasks.some(task => task.mediaKind && task.mediaKind !== 'video');
+    $('download-button-label').textContent = state.running ? '正在保存课程…' : allSelected ? hasNonVideo ? '下载全部课程内容' : '下载全部视频课程' : '下载所选课程';
     $('cancel-button').hidden = !state.running;
     $('cancel-button').disabled = state.stopping;
     $('cancel-button').textContent = state.stopping ? '正在停止…' : '停止下载';
@@ -215,6 +217,24 @@
     } finally { state.parsing = false; refreshControls(); }
   }
 
+  async function syncAllStudy() {
+    if (state.parsing || state.running) return;
+    state.parsing = true;
+    refreshControls();
+    setSourceStatus('正在展开全部专栏并整理学习内容…', 'busy');
+    addLog('正在读取全部已购专栏和最近学习课时…');
+    try {
+      const result = await api.syncAllStudyCourses();
+      if (!result?.ok || !result.course?.tasks?.length) throw new Error(result?.error || '全部学习内容未完整读取，请重试。');
+      setCourse(result.course);
+      const failed = Array.isArray(result.failedCourses) ? result.failedCourses.length : 0;
+      setSourceStatus(`已整理 ${result.course.tasks.length} 个课时，可一次批量处理${failed ? `；${failed} 个专栏需要单独重试` : ''}。`, failed ? 'error' : 'success');
+      addLog(`全部学习内容整理完成，共 ${result.course.tasks.length} 个课时${failed ? `，${failed} 个专栏失败` : ''}。`);
+    } catch (error) {
+      setSourceStatus(error.message, 'error'); addLog(error.message, true); showToast(error.message);
+    } finally { state.parsing = false; refreshControls(); }
+  }
+
   function renderLicense(license) {
     const value = license || { authorized: false, detail: '尚未激活' };
     state.authorized = Boolean(value.authorized);
@@ -268,7 +288,8 @@
     const copy = element('div', 'task-copy');
     const title = element('p', 'task-title', task.title || '未命名课时');
     const meta = element('p', 'task-meta');
-    const type = element('span', '', '视频课');
+    const typeLabels = { video: '视频课', audio: '音频课', document: '图文课' };
+    const type = element('span', '', typeLabels[task.mediaKind] || '课程内容');
     const duration = element('span', '', formatDuration(task.duration));
     const detail = element('span', 'task-detail');
     meta.append(type, duration, detail);
@@ -302,9 +323,11 @@
     $('batch-summary').hidden = true;
     $('course-title').textContent = course.title || '千聊课程';
     const skipped = Number(course.skippedTopicCount) || 0;
+    const failedCourses = Array.isArray(course.failedCourses) ? course.failedCourses.length : 0;
     $('course-subtitle').textContent = tasks.length
       ? skipped ? `已读取 ${tasks.length} 节视频课；另有 ${skipped} 节音频或图文内容暂不支持下载。可按章节勾选，也可一次保存全部视频课。`
-        : '目录已完整读取，默认全选全部视频课；也可按章节勾选后保存。'
+        : failedCourses ? `已整理 ${tasks.length} 个课时；${failedCourses} 个专栏读取失败，请重新同步后再试。`
+        : '目录已完整读取，默认全选全部课程内容；也可按课程分类调整勾选。'
       : '暂未读取到可下载课时，请确认课程已发布并重新读取。';
     $('course-count').textContent = `${tasks.length} 节课程`;
     $('course-count').hidden = !tasks.length;
@@ -462,6 +485,7 @@
   });
 
   $('sync-study-button').addEventListener('click', syncStudy);
+  $('sync-all-study-button').addEventListener('click', syncAllStudy);
   $('refresh-study-button').addEventListener('click', syncStudy);
   $('show-study-button').addEventListener('click', showStudyCourses);
   $('study-search').addEventListener('input', renderStudyCourses);

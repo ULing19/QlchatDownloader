@@ -93,14 +93,16 @@ function findCourseMetadata(state) {
 function buildTasks(rows) {
   const chapters = new Map(rows.filter(r => r.businessType === 'chapter').map(r => [String(r.businessId), cleanTitle(r.businessName, '课程章节')]));
   const seen = new Set();
-  // QLChat uses `normal` and `ppt` for video/live lessons as well as the
-  // newer videoGraphic/video styles. Only the known audio-only styles are
-  // omitted; an unknown style is retained and resolved through the media API
-  // instead of silently disappearing from an "all lessons" batch.
-  const audioStyles = new Set(['audio', 'audiographic', 'audiolive']);
-  return rows.filter(r => r.businessType === 'topic' && !audioStyles.has(String(r.topicPo?.style || '').toLowerCase()))
+  return rows.filter(r => r.businessType === 'topic')
     .filter(r => /^\d+$/.test(String(r.businessId)) && !seen.has(String(r.businessId)) && seen.add(String(r.businessId)))
-    .map((r, index) => ({ id: String(r.businessId), title: cleanTitle(r.businessName || r.topicPo?.topic, `第 ${index + 1} 节`), chapter: chapters.get(String(r.chapterId)) || '课程视频', index: index + 1, duration: Number(r.topicPo?.duration) || undefined }));
+    .map((r, index) => ({ id: String(r.businessId), title: cleanTitle(r.businessName || r.topicPo?.topic, `第 ${index + 1} 节`), chapter: chapters.get(String(r.chapterId)) || '课程视频', index: index + 1, duration: Number(r.topicPo?.duration) || undefined, mediaKind: mediaKindForStyle(r.topicPo?.style) }));
+}
+
+function mediaKindForStyle(style) {
+  const value = String(style || '').trim().toLowerCase();
+  if (/audio/.test(value)) return 'audio';
+  if (/document|article|text|imagegraphic|graphic/.test(value) && !/video|ppt/.test(value)) return 'document';
+  return 'video';
 }
 
 function normalizeStudyCourse(row) {
@@ -128,6 +130,7 @@ function normalizeRecentCourse(row) {
     throw new QlchatError('最近学习中的课程编号无效，尚未同步完整。');
   }
   const type = String(row.courseType || row.topicType || 'topic');
+  const topicType = String(row.topicType || row.topicMediaType || row.style || '');
   const supported = type === 'topic' && String(row.system || 'QLCHAT') === 'QLCHAT';
   const course = {
     id,
@@ -135,6 +138,8 @@ function normalizeRecentCourse(row) {
     kind: supported ? 'topic' : 'unsupported',
     supported,
     courseType: type,
+    topicType,
+    mediaKind: mediaKindForStyle(topicType),
     source: 'recent',
     url: supported ? `${ORIGIN}/wechat/page/topic-simple-video?topicId=${id}` : null,
   };
@@ -145,6 +150,14 @@ function normalizeRecentCourse(row) {
 }
 
 function decodePlayUrl(encoded) {
+  return decodeMediaUrl(encoded, /\.(?:m3u8|mp4)(?:$|[?#])/i, '视频');
+}
+
+function decodeAudioUrl(encoded) {
+  return decodeMediaUrl(encoded, /\.(?:m3u8|mp3|m4a|aac|wav|ogg|webm|mp4)(?:$|[?#])/i, '音频');
+}
+
+function decodeMediaUrl(encoded, extensionPattern, label) {
   let value = String(encoded || '');
   if (!/^https:\/\//i.test(value)) {
     try {
@@ -155,10 +168,59 @@ function decodePlayUrl(encoded) {
   }
   let parsed;
   try { parsed = new URL(value); } catch { throw new QlchatError('课程没有返回有效的视频地址。'); }
-  if (parsed.protocol !== 'https:' || !/\.(?:m3u8|mp4)$/i.test(parsed.pathname) || !isMediaHost(parsed.hostname)) {
-    throw new QlchatError('该课程的视频地址格式暂不支持。');
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password || !extensionPattern.test(`${parsed.pathname}${parsed.search}`) || !isMediaHost(parsed.hostname)) {
+    throw new QlchatError(`该课程的${label}地址格式暂不支持。`);
   }
   return parsed.href;
+}
+
+const URL_KEYS = /(?:^|_)(?:url|uri|src|source|playurl|mediaurl|media|audio|video)(?:$|_)/i;
+const CONTENT_KEYS = /(?:content|body|text|html|article|description|detail|summary|intro|rich)/i;
+
+function findNestedUrl(value, depth = 0, seen = new Set(), keyHint = '') {
+  if (depth > 8 || value == null) return null;
+  if (typeof value === 'string') {
+    const matches = value.match(/https?:\/\/[^\s"'<>\\]+/ig) || [];
+    for (const candidate of matches) {
+      try {
+        const parsed = new URL(candidate.replace(/[),.;]+$/, ''));
+        if (!parsed.username && !parsed.password && isMediaHost(parsed.hostname) && /\.(?:m3u8|mp3|m4a|aac|wav|ogg|webm|mp4)(?:$|[?#])/i.test(`${parsed.pathname}${parsed.search}`)) return parsed.href;
+      } catch { /* ignore malformed nested values */ }
+    }
+    if (URL_KEYS.test(keyHint) && (/^https:\/\//i.test(value) || /^[A-Za-z0-9+/=_-]{32,}$/.test(value))) return value;
+    return null;
+  }
+  if (typeof value !== 'object' || seen.has(value)) return null;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    for (const item of value) { const found = findNestedUrl(item, depth + 1, seen, keyHint); if (found) return found; }
+    return null;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    const found = findNestedUrl(item, depth + 1, seen, key);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findNestedContent(value, depth = 0, seen = new Set(), keyHint = '', inContent = false) {
+  if (depth > 8 || value == null) return '';
+  const contentContext = inContent || CONTENT_KEYS.test(keyHint);
+  if (typeof value === 'string') {
+    const text = value.trim();
+    if (!text || /^https?:\/\//i.test(text)) return '';
+    // DownloadManager escapes this into local HTML; remote markup cannot run.
+    return contentContext || depth === 0 ? text.slice(0, 2 * 1024 * 1024) : '';
+  }
+  if (typeof value !== 'object' || seen.has(value)) return '';
+  seen.add(value);
+  if (Array.isArray(value)) return value.map(item => findNestedContent(item, depth + 1, seen, keyHint, contentContext)).filter(Boolean).join('\n\n').slice(0, 2 * 1024 * 1024);
+  const preferred = Object.entries(value).sort(([a], [b]) => Number(CONTENT_KEYS.test(b)) - Number(CONTENT_KEYS.test(a)));
+  for (const [key, item] of preferred) {
+    const found = findNestedContent(item, depth + 1, seen, key, contentContext);
+    if (found) return found;
+  }
+  return '';
 }
 
 function isMediaHost(host) {
@@ -354,7 +416,7 @@ class QlchatClient {
     }
     if (!tasks.length && meta.topic.id) {
       catalogTopicCount = 1;
-      tasks = [{ id: String(meta.topic.id), title: cleanTitle(meta.topic.topic, '课程视频'), chapter: '课程视频', index: 1, duration: Number(meta.topic.duration) || undefined }];
+      tasks = [{ id: String(meta.topic.id), title: cleanTitle(meta.topic.topic, '课程视频'), chapter: '课程视频', index: 1, duration: Number(meta.topic.duration) || undefined, mediaKind: mediaKindForStyle(meta.topic.style || meta.topic.topicStyle) }];
     }
     if (!tasks.length) throw new QlchatError('没有找到视频课程，请尝试打开任意一节后复制该视频链接。');
     this.meta = meta;
@@ -362,12 +424,25 @@ class QlchatClient {
   }
 
   async resolveMedia(task, options = {}) {
-    const data = await this.api('/api/wechat/topic/getMediaActualUrl', { topicId: String(task.id) }, undefined, options);
-    const videos = (data?.video || []).filter(v => v.playUrl).sort((a, b) => Number(b.resolution || b.height || 0) - Number(a.resolution || a.height || 0));
-    if (!videos.length) throw new QlchatError('当前账号无法获取这节视频，请确认已购课且能够在线播放。');
-    const chosen = videos[0];
-    return { url: decodePlayUrl(chosen.playUrl), duration: Number(chosen.duration) || task.duration, width: Number(chosen.width), height: Number(chosen.height) };
+    const mediaKind = ['audio', 'document', 'video'].includes(task?.mediaKind) ? task.mediaKind : 'video';
+    if (mediaKind === 'video') {
+      const data = await this.api('/api/wechat/topic/getMediaActualUrl', { topicId: String(task.id) }, undefined, options);
+      const videos = (data?.video || []).filter(v => v.playUrl).sort((a, b) => Number(b.resolution || b.height || 0) - Number(a.resolution || a.height || 0));
+      if (!videos.length) throw new QlchatError('当前账号无法获取这节视频，请确认已购课且能够在线播放。');
+      const chosen = videos[0];
+      return { mediaKind, url: decodePlayUrl(chosen.playUrl), duration: Number(chosen.duration) || task.duration, width: Number(chosen.width), height: Number(chosen.height) };
+    }
+    if (mediaKind === 'audio') {
+      const data = await this.api('/api/wechat/topic/media-url', undefined, { topicId: String(task.id) }, options);
+      const encodedUrl = findNestedUrl(data);
+      if (!encodedUrl) throw new QlchatError('当前账号无法获取这节音频，请确认已购课且能够在线播放。');
+      return { mediaKind, url: decodeAudioUrl(encodedUrl), duration: Number(data?.duration || data?.audio?.duration) || task.duration };
+    }
+    const data = await this.api('/api/wechat/topic/getInfo', undefined, { topicId: String(task.id) }, options);
+    const content = findNestedContent(data);
+    if (!content) throw new QlchatError('当前图文课没有可保存的正文内容。');
+    return { mediaKind, content, title: task.title, contentType: 'text/html' };
   }
 }
 
-module.exports = { QlchatError, ORIGIN, USER_AGENT, STUDY_URL, courseUrl, studyUrl, loginUrl, parseInitialState, findCourseMetadata, buildTasks, normalizeStudyCourse, normalizeRecentCourse, decodePlayUrl, isMediaHost, QlchatClient };
+module.exports = { QlchatError, ORIGIN, USER_AGENT, STUDY_URL, courseUrl, studyUrl, loginUrl, parseInitialState, findCourseMetadata, buildTasks, mediaKindForStyle, normalizeStudyCourse, normalizeRecentCourse, decodePlayUrl, decodeAudioUrl, findNestedUrl, findNestedContent, isMediaHost, QlchatClient };

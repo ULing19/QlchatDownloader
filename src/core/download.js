@@ -40,6 +40,22 @@ function positiveNumber(value) {
   return Number.isFinite(result) && result > 0 ? result : 0;
 }
 
+function mediaExtension(mediaKind) {
+  return mediaKind === 'audio' ? 'm4a' : mediaKind === 'document' ? 'html' : 'mp4';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function renderDocumentContent(value) {
+  const escaped = escapeHtml(value);
+  return escaped.replace(/https:\/\/[^\s&"'<>]+/gi, candidate => {
+    if (!/\.(?:png|jpe?g|gif|webp)(?:[?#].*)?$/i.test(candidate)) return candidate;
+    return `<img src="${candidate}" alt="课程图片" loading="lazy">`;
+  });
+}
+
 function isInside(root, candidate) {
   const relative = path.relative(root, candidate);
   return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
@@ -231,6 +247,7 @@ class DownloadManager extends EventEmitter {
     let partial;
     this._abort = new AbortController();
     try {
+      const requestedKind = ['audio', 'document', 'video'].includes(task.mediaKind) ? task.mediaKind : 'video';
       const chapterValue = typeof task.chapter === 'object' && task.chapter ? task.chapter.title || task.chapter.name : task.chapter;
       const folder = path.join(courseDir, safeName(chapterValue, '课程视频'));
       await fs.mkdir(folder, { recursive: true });
@@ -238,11 +255,11 @@ class DownloadManager extends EventEmitter {
       const number = String(Math.floor(task.index)).padStart(2, '0');
       const base = `${number} ${safeName(task.title, `课程 ${number}`, 120)}`;
       if (this.resumeExisting) {
-        const existing = await this._findExisting(folder, number);
+        const existing = await this._findExisting(folder, number, requestedKind);
         if (existing) {
           this._progress(task, 'resolving');
           this._progress(task, 'verifying', { percent: 99, totalSeconds: positiveNumber(task.duration) });
-          const verified = await this._verifyFile(existing, positiveNumber(task.duration));
+          const verified = await this._verifyFile(existing, positiveNumber(task.duration), requestedKind);
           if (verified) {
             const actualDuration = positiveNumber(verified.duration);
             this._progress(task, 'completed', { percent: 100, downloadedSeconds: actualDuration, totalSeconds: actualDuration || positiveNumber(task.duration), path: existing });
@@ -250,7 +267,7 @@ class DownloadManager extends EventEmitter {
             return existing;
           }
         }
-        await this._removeStalePartials(folder, number);
+        await this._removeStalePartials(folder, number, requestedKind);
       }
       this._progress(task, 'resolving');
       let media;
@@ -263,6 +280,23 @@ class DownloadManager extends EventEmitter {
         throw new DownloadError('RESOLVE_FAILED', '获取播放地址失败，请在登录窗口确认该课程可以播放。');
       }
       this._checkCancelled();
+      const mediaKind = ['audio', 'document', 'video'].includes(media?.mediaKind) ? media.mediaKind : requestedKind;
+      if (mediaKind === 'document') {
+        const content = typeof media?.content === 'string' ? media.content : typeof media?.text === 'string' ? media.text : typeof media?.body === 'string' ? media.body : '';
+        if (!content.trim()) throw new DownloadError('INVALID_FILE', '图文内容为空，无法保存。');
+        partial = path.join(folder, `.${safeName(base, number, 125)}.${randomUUID()}.part.html`);
+        this._progress(task, 'downloading', { totalSeconds: 0 });
+        const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapeHtml(task.title || '千聊图文')}</title><style>body{font-family:system-ui,sans-serif;line-height:1.7;max-width:960px;margin:2rem auto;padding:0 1rem;color:#243b32}pre{white-space:pre-wrap;word-break:break-word}img{display:block;max-width:100%;height:auto;margin:1rem 0}</style></head><body><pre>${renderDocumentContent(content)}</pre></body></html>`;
+        await fs.writeFile(partial, html, { encoding: 'utf8', flag: 'wx' });
+        this._checkCancelled();
+        const info = await fs.stat(partial);
+        if (!info.isFile() || info.size < 32) throw new DownloadError('INVALID_FILE', '图文内容为空或不完整，请重试。');
+        const finalPath = await this._publish(partial, folder, base, 'html');
+        partial = null;
+        this._progress(task, 'completed', { percent: 100, path: finalPath });
+        this.emit('log', '一节图文课程已保存到本地。');
+        return finalPath;
+      }
       const url = validateMediaUrl(media?.url);
       let totalSeconds = positiveNumber(media.duration) || positiveNumber(task.duration);
       if (/\.m3u8$/i.test(url.pathname)) {
@@ -275,14 +309,17 @@ class DownloadManager extends EventEmitter {
         totalSeconds = manifest.duration || totalSeconds;
       }
       this._checkCancelled();
-      partial = path.join(folder, `.${safeName(base, number, 125)}.${randomUUID()}.part.mp4`);
+      const extension = mediaExtension(mediaKind);
+      partial = path.join(folder, `.${safeName(base, number, 125)}.${randomUUID()}.part.${extension}`);
       const headers = Object.entries(REQUEST_HEADERS).map(([name, value]) => `${name}: ${value}\r\n`).join('');
       this._progress(task, 'downloading', { totalSeconds });
-      const downloadedSeconds = await this._run([
+      const ffmpegArgs = [
         '-nostdin', '-hide_banner', '-loglevel', 'error', '-n', '-rw_timeout', '30000000',
-        '-headers', headers, '-i', url.href, '-map', '0:v:0', '-map', '0:a:0?',
-        '-c', 'copy', '-movflags', '+faststart', '-progress', 'pipe:1', partial,
-      ], seconds => this._progress(task, 'downloading', {
+        '-headers', headers, '-i', url.href,
+        ...(mediaKind === 'audio' ? ['-map', '0:a:0', '-vn', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart'] : ['-map', '0:v:0', '-map', '0:a:0?', '-c', 'copy', '-movflags', '+faststart']),
+        '-progress', 'pipe:1', partial,
+      ];
+      const downloadedSeconds = await this._run(ffmpegArgs, seconds => this._progress(task, 'downloading', {
         percent: totalSeconds ? Math.min(98, Math.max(0, seconds / totalSeconds * 98)) : 0,
         downloadedSeconds: seconds, totalSeconds,
       }));
@@ -290,13 +327,13 @@ class DownloadManager extends EventEmitter {
       const info = await fs.stat(partial);
       if (!info.isFile() || info.size < 1024) throw new DownloadError('INVALID_FILE', '下载文件为空或不完整，请重试。');
       this._progress(task, 'verifying', { percent: 99, downloadedSeconds, totalSeconds });
-      const verified = await this._verifyFile(partial, totalSeconds);
+      const verified = await this._verifyFile(partial, totalSeconds, mediaKind);
       this._checkCancelled();
       const actualDuration = positiveNumber(verified?.duration);
       if (!actualDuration || (totalSeconds && actualDuration < totalSeconds - Math.max(2, totalSeconds * 0.02))) {
         throw new DownloadError('INCOMPLETE_FILE', '视频时长不足，文件可能不完整，请重新下载。');
       }
-      const finalPath = await this._publish(partial, folder, base);
+      const finalPath = await this._publish(partial, folder, base, extension);
       partial = null;
       this._progress(task, 'completed', { percent: 100, downloadedSeconds: actualDuration, totalSeconds: totalSeconds || actualDuration, path: finalPath });
       this.emit('log', `一节课程已下载并通过完整性检查。`);
@@ -307,28 +344,38 @@ class DownloadManager extends EventEmitter {
     }
   }
 
-  async _findExisting(folder, number) {
+  async _findExisting(folder, number, mediaKind = 'video') {
     let entries;
     try { entries = await fs.readdir(folder, { withFileTypes: true }); } catch { return null; }
+    const extension = `.${mediaExtension(mediaKind)}`;
     for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.startsWith(`${number} `) || !entry.name.toLowerCase().endsWith('.mp4') || entry.name.includes('.part.')) continue;
+      if (!entry.isFile() || !entry.name.startsWith(`${number} `) || !entry.name.toLowerCase().endsWith(extension) || entry.name.includes('.part.')) continue;
       const candidate = path.join(folder, entry.name);
-      try { if ((await fs.stat(candidate)).size > 1024 * 1024) return candidate; } catch { /* changed during scan */ }
+      try {
+        const minimum = mediaKind === 'document' ? 32 : 1024;
+        if ((await fs.stat(candidate)).size > minimum) return candidate;
+      } catch { /* changed during scan */ }
     }
     return null;
   }
 
-  async _removeStalePartials(folder, number) {
+  async _removeStalePartials(folder, number, mediaKind = 'video') {
     let entries;
     try { entries = await fs.readdir(folder, { withFileTypes: true }); } catch { return; }
-    await Promise.all(entries.filter(entry => entry.isFile() && entry.name.startsWith(`.${number} `) && entry.name.endsWith('.part.mp4')).map(entry => fs.unlink(path.join(folder, entry.name)).catch(() => {})));
+    const extension = `.part.${mediaExtension(mediaKind)}`;
+    await Promise.all(entries.filter(entry => entry.isFile() && entry.name.startsWith(`.${number} `) && entry.name.endsWith(extension)).map(entry => fs.unlink(path.join(folder, entry.name)).catch(() => {})));
   }
 
-  async _verifyFile(file, expectedDuration) {
-    if (this.verifyMedia) return this.verifyMedia(file, { expectedDuration, signal: this._abort.signal });
+  async _verifyFile(file, expectedDuration, mediaKind = 'video') {
+    if (mediaKind === 'document') {
+      const info = await fs.stat(file).catch(() => null);
+      if (!info?.isFile() || info.size < 32) throw new DownloadError('VERIFY_FAILED', '图文文件未通过完整性检查，请重新保存。');
+      return { duration: positiveNumber(expectedDuration) };
+    }
+    if (this.verifyMedia) return this.verifyMedia(file, { expectedDuration, mediaKind, signal: this._abort.signal });
     return { duration: await this._run([
       '-nostdin', '-hide_banner', '-loglevel', 'error', '-xerror', '-i', file,
-      '-map', '0:v:0', '-map', '0:a:0?', '-progress', 'pipe:1', '-f', 'null',
+      ...(mediaKind === 'audio' ? ['-map', '0:a:0'] : ['-map', '0:v:0', '-map', '0:a:0?']), '-progress', 'pipe:1', '-f', 'null',
       process.platform === 'win32' ? 'NUL' : '/dev/null',
     ], () => {}, true) };
   }
@@ -398,10 +445,10 @@ class DownloadManager extends EventEmitter {
     });
   }
 
-  async _publish(partial, folder, base) {
+  async _publish(partial, folder, base, extension = 'mp4') {
     for (let suffix = 0; suffix < 10000; suffix++) {
       this._checkCancelled();
-      const destination = path.join(folder, `${base}${suffix ? ` (${suffix + 1})` : ''}.mp4`);
+      const destination = path.join(folder, `${base}${suffix ? ` (${suffix + 1})` : ''}.${extension}`);
       try {
         // Same-volume hard-link creation is atomic and fails on an existing name.
         // Node's rename replaces a destination, so it cannot provide the no-overwrite guarantee.
